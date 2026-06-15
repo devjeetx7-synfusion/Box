@@ -4,6 +4,7 @@ import com.datasync.admin.model.Contact
 import com.datasync.admin.model.Device
 import com.datasync.admin.model.SMS
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -13,6 +14,7 @@ class FirestoreRepository {
 
     fun getDevices(): Flow<List<Device>> = callbackFlow {
         val subscription = db.collection("devices")
+            .orderBy("lastSyncTime", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
                     val devices = snapshot.toObjects(Device::class.java)

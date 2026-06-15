@@ -1,3 +1,0 @@
-rootProject.name = "DataSyncProject"
-include ':user-app'
-include ':admin-app'

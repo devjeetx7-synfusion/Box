@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,32 +59,38 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DashboardScreen(repository: FirestoreRepository, onDeviceClick: (String) -> Unit) {
     val devices by repository.getDevices().collectAsState(initial = emptyList())
-    var isRefreshing by remember { mutableStateOf(false) }
-
-    // In a real app with Firestore, data is real-time, but we can simulate a refresh
-    // or just rely on the fact that Firestore Flow updates automatically.
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Data Sync Admin") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Data Sync Admin") }
+            )
+        }
     ) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
-            items(devices) { device ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
-                        .clickable { onDeviceClick(device.deviceId) },
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(device.deviceName, fontSize = 20.sp, style = MaterialTheme.typography.titleLarge)
-                        Text("ID: ${device.deviceId}", fontSize = 12.sp)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Contacts: ${device.contactCount}")
-                            Text("SMS: ${device.smsCount}")
+        if (devices.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No devices found")
+            }
+        } else {
+            LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+                items(devices) { device ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp)
+                            .clickable { onDeviceClick(device.deviceId) },
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(device.deviceName, fontSize = 20.sp, style = MaterialTheme.typography.titleLarge)
+                            Text("ID: ${device.deviceId}", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Contacts: ${device.contactCount}")
+                                Text("SMS: ${device.smsCount}")
+                            }
+                            Text("Last Sync: ${formatDate(device.lastSyncTime)}")
                         }
-                        Text("Last Sync: ${formatDate(device.lastSyncTime)}")
                     }
                 }
             }
@@ -94,6 +102,8 @@ fun DashboardScreen(repository: FirestoreRepository, onDeviceClick: (String) -> 
 @Composable
 fun DeviceDetailsScreen(deviceId: String, repository: FirestoreRepository) {
     var selectedTab by remember { mutableIntStateOf(0) }
+    var smsFilter by remember { mutableIntStateOf(0) } // 0=All, 1=Inbox, 2=Sent
+
     val contacts by repository.getContacts(deviceId).collectAsState(initial = emptyList())
     val smsList by repository.getSMS(deviceId).collectAsState(initial = emptyList())
 
@@ -107,12 +117,25 @@ fun DeviceDetailsScreen(deviceId: String, repository: FirestoreRepository) {
                     Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Contacts") })
                     Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("SMS") })
                 }
+
+                if (selectedTab == 1) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        FilterChip(selected = smsFilter == 0, onClick = { smsFilter = 0 }, label = { Text("All") })
+                        FilterChip(selected = smsFilter == 1, onClick = { smsFilter = 1 }, label = { Text("Inbox") })
+                        FilterChip(selected = smsFilter == 2, onClick = { smsFilter = 2 }, label = { Text("Sent") })
+                    }
+                }
+
                 TextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("Search...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
             }
         }
@@ -130,7 +153,10 @@ fun DeviceDetailsScreen(deviceId: String, repository: FirestoreRepository) {
                     }
                 }
             } else {
-                val filteredSms = smsList.filter { it.address.contains(searchQuery, ignoreCase = true) || it.body.contains(searchQuery, ignoreCase = true) }
+                val filteredSms = smsList.filter {
+                    (it.address.contains(searchQuery, ignoreCase = true) || it.body.contains(searchQuery, ignoreCase = true)) &&
+                    (smsFilter == 0 || it.type == smsFilter)
+                }
                 LazyColumn {
                     items(filteredSms) { sms ->
                         ListItem(
