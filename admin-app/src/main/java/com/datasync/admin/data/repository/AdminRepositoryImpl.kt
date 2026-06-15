@@ -11,8 +11,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class AdminRepositoryImpl @Inject constructor() : AdminRepository {
-    private val db = FirebaseFirestore.getInstance()
+class AdminRepositoryImpl @Inject constructor(
+    private val db: FirebaseFirestore
+) : AdminRepository {
 
     override fun getDevices(): Flow<List<Device>> {
         return db.collection("devices")
