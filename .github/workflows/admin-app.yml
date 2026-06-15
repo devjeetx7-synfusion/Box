@@ -22,11 +22,11 @@ jobs:
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Build Release APK
-        run: ./gradlew :admin-app:clean :admin-app:assembleRelease --stacktrace
+      - name: Build Signed Release APK
+        run: ./gradlew :admin-app:assembleRelease --stacktrace
 
-      - name: Locate APK
-        id: apk-path
+      - name: Verify and Collect APK Metadata
+        id: apk-info
         run: |
           echo "📂 Searching for APK..."
           APK_PATH=$(find admin-app/build/outputs/apk/release -name "*.apk" | head -n 1)
@@ -34,10 +34,24 @@ jobs:
             echo "❌ Error: APK not found!"
             exit 1
           fi
-          APK_NAME=$(basename "$APK_PATH")
+
           echo "✅ APK located at: $APK_PATH"
+
+          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+          APK_NAME=$(basename "$APK_PATH")
+
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
+          echo "APK_SIZE=$APK_SIZE" >> $GITHUB_ENV
+
+          # Verify signing
+          echo "🛡️ Verifying APK signing..."
+          APKSIGNER_PATH=$(find $ANDROID_HOME/build-tools -name apksigner | sort -r | head -n 1)
+          if [ -n "$APKSIGNER_PATH" ]; then
+            $APKSIGNER_PATH verify --verbose "$APK_PATH"
+          else
+            echo "⚠️ apksigner not found, skipping verification"
+          fi
 
       - name: Send APK to Telegram
         env:
@@ -49,11 +63,17 @@ jobs:
           BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
           BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 
+          APP_ID="com.datasync.admin"
+          VERSION_NAME="1.0"
+          VERSION_CODE="1"
+
           CAPTION="🚀 *Admin App Build Successful*
 
           *App:* Data Sync Admin
           *Module:* admin-app
-          *Package:* com.datasync.admin
+          *Package:* \`${APP_ID}\`
+          *Version:* \`${VERSION_NAME}\` (${VERSION_CODE})
+          *Size:* \`${{ env.APK_SIZE }}\`
           *Workflow:* ${{ github.workflow }}
           *Branch:* \`${BRANCH_NAME}\`
           *Commit:* \`${GITHUB_SHA:0:7}\`
