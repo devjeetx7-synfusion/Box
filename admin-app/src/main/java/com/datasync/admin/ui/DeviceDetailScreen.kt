@@ -22,17 +22,23 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.datasync.admin.data.FirestoreRepository
-import com.datasync.admin.model.*
-import com.datasync.admin.formatDate
+import com.datasync.admin.ui.viewmodel.DeviceDetailViewModel
+import com.datasync.admin.domain.model.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun DeviceDetailScreen(deviceId: String, repository: FirestoreRepository, onBack: () -> Unit) {
+fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 4 })
     var searchQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(deviceId) {
+        viewModel.setDeviceId(deviceId)
+    }
+
+    val devices by viewModel.devices.collectAsState()
+    val device = devices.find { it.deviceId == deviceId }
 
     val tabs = listOf(
         TabItem("Contacts", Icons.Default.Person),
@@ -50,6 +56,20 @@ fun DeviceDetailScreen(deviceId: String, repository: FirestoreRepository, onBack
                         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = null) }
                     }
                 )
+
+                // Sticky Header
+                device?.let {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(it.deviceName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            Text("ID: ${it.deviceId}", style = MaterialTheme.typography.bodySmall)
+                            Text("Last Synced: ${formatDate(it.lastSyncTime)}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
 
                 ScrollableTabRow(
                     selectedTabIndex = pagerState.currentPage,
@@ -96,10 +116,10 @@ fun DeviceDetailScreen(deviceId: String, repository: FirestoreRepository, onBack
             verticalAlignment = Alignment.Top
         ) { page ->
             when (page) {
-                0 -> ContactsTab(deviceId, repository, searchQuery)
-                1 -> MessagesTab(deviceId, repository, searchQuery)
-                2 -> NotificationsTab(deviceId, repository, searchQuery)
-                3 -> CallsTab(deviceId, repository, searchQuery)
+                0 -> ContactsTab(viewModel, searchQuery)
+                1 -> MessagesTab(viewModel, searchQuery)
+                2 -> NotificationsTab(viewModel, searchQuery)
+                3 -> CallsTab(viewModel, searchQuery)
             }
         }
     }
@@ -108,8 +128,8 @@ fun DeviceDetailScreen(deviceId: String, repository: FirestoreRepository, onBack
 data class TabItem(val title: String, val icon: ImageVector)
 
 @Composable
-fun ContactsTab(deviceId: String, repository: FirestoreRepository, query: String) {
-    val contacts by repository.getContacts(deviceId).collectAsState(initial = emptyList())
+fun ContactsTab(viewModel: DeviceDetailViewModel, query: String) {
+    val contacts by viewModel.contacts.collectAsState()
     val filtered = contacts.filter { it.name.contains(query, true) || it.phone.contains(query) }
 
     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
@@ -132,8 +152,8 @@ fun ContactsTab(deviceId: String, repository: FirestoreRepository, query: String
 }
 
 @Composable
-fun MessagesTab(deviceId: String, repository: FirestoreRepository, query: String) {
-    val messages by repository.getSMS(deviceId).collectAsState(initial = emptyList())
+fun MessagesTab(viewModel: DeviceDetailViewModel, query: String) {
+    val messages by viewModel.sms.collectAsState()
     var filter by remember { mutableIntStateOf(0) } // 0: All, 1: Inbox, 2: Sent
 
     val filtered = messages.filter {
@@ -175,8 +195,8 @@ fun MessagesTab(deviceId: String, repository: FirestoreRepository, query: String
 }
 
 @Composable
-fun NotificationsTab(deviceId: String, repository: FirestoreRepository, query: String) {
-    val notifications by repository.getNotifications(deviceId).collectAsState(initial = emptyList())
+fun NotificationsTab(viewModel: DeviceDetailViewModel, query: String) {
+    val notifications by viewModel.notifications.collectAsState()
     val filtered = notifications.filter { it.appName.contains(query, true) || it.title.contains(query, true) || it.text.contains(query, true) }
 
     val grouped = filtered.groupBy { it.appName }
@@ -213,8 +233,8 @@ fun NotificationsTab(deviceId: String, repository: FirestoreRepository, query: S
 }
 
 @Composable
-fun CallsTab(deviceId: String, repository: FirestoreRepository, query: String) {
-    val calls by repository.getCallLogs(deviceId).collectAsState(initial = emptyList())
+fun CallsTab(viewModel: DeviceDetailViewModel, query: String) {
+    val calls by viewModel.callLogs.collectAsState()
     val filtered = calls.filter { it.name.contains(query, true) || it.number.contains(query) }
 
     LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {

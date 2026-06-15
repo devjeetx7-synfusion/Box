@@ -1,13 +1,13 @@
-package com.boxx.porn.utils
+package com.boxx.datasync.data.util
 
 import android.annotation.SuppressLint
 import android.content.Context
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
-import com.boxx.porn.model.CallLog as CallLogModel
-import com.boxx.porn.model.Contact
-import com.boxx.porn.model.SMS
+import com.boxx.datasync.domain.model.CallLog as CallLogModel
+import com.boxx.datasync.domain.model.Contact
+import com.boxx.datasync.domain.model.SMS
 
 object DataHelper {
 

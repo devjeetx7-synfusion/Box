@@ -1,10 +1,10 @@
-package com.boxx.porn
+package com.boxx.datasync
 
 import android.app.Application
 import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
-import com.boxx.porn.utils.DeviceIdHelper
+import com.boxx.datasync.data.util.DeviceIdHelper
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.HiltAndroidApp

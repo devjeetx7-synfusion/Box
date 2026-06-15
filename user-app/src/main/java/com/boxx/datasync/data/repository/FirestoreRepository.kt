@@ -1,7 +1,7 @@
-package com.boxx.porn.data
+package com.boxx.datasync.data.repository
 
 import android.util.Log
-import com.boxx.porn.model.*
+import com.boxx.datasync.domain.model.*
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -66,7 +66,6 @@ class FirestoreRepository @Inject constructor() {
             .collection(collectionName)
 
         try {
-            // Batch writes limited to 500 operations
             val chunks = data.chunked(500)
             for (chunk in chunks) {
                 val batch = db.batch()

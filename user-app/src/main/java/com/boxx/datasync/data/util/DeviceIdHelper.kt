@@ -1,15 +1,25 @@
-package com.boxx.porn.utils
+package com.boxx.datasync.data.util
 
 import android.content.Context
 import android.provider.Settings
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import java.util.UUID
 
 object DeviceIdHelper {
-    private const val PREFS_NAME = "device_prefs"
+    private const val PREFS_NAME = "device_prefs_encrypted"
     private const val KEY_DEVICE_ID = "device_id"
 
     fun getDeviceId(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        val prefs = EncryptedSharedPreferences.create(
+            PREFS_NAME,
+            masterKeyAlias,
+            context,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+
         var deviceId = prefs.getString(KEY_DEVICE_ID, null)
 
         if (deviceId == null) {

@@ -1,7 +1,7 @@
-package com.datasync.admin.data
+package com.datasync.admin.data.repository
 
 import android.util.Log
-import com.datasync.admin.model.*
+import com.datasync.admin.domain.model.*
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query

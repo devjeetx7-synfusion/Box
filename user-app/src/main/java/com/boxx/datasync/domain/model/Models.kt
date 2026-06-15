@@ -1,4 +1,4 @@
-package com.boxx.porn.model
+package com.boxx.datasync.domain.model
 
 import com.google.firebase.firestore.IgnoreExtraProperties
 

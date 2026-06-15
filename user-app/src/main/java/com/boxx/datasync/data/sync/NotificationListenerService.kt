@@ -1,10 +1,10 @@
-package com.boxx.porn.sync
+package com.boxx.datasync.data.sync
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import com.boxx.porn.data.FirestoreRepository
-import com.boxx.porn.model.NotificationData
-import com.boxx.porn.utils.DeviceIdHelper
+import com.boxx.datasync.data.repository.FirestoreRepository
+import com.boxx.datasync.domain.model.NotificationData
+import com.boxx.datasync.data.util.DeviceIdHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class DataSyncNotificationListenerService : NotificationListenerService() {
+class NotificationListenerService : NotificationListenerService() {
 
     @Inject
     lateinit var repository: FirestoreRepository

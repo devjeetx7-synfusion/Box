@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.boxx.porn"
+    namespace = "com.boxx.datasync"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.boxx.porn"
+        applicationId = "com.boxx.datasync"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -87,6 +87,7 @@ dependencies {
 
     // Preferences
     implementation(libs.androidx.preference.ktx)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

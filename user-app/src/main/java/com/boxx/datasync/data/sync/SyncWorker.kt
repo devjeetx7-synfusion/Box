@@ -1,13 +1,13 @@
-package com.boxx.porn.sync
+package com.boxx.datasync.data.sync
 
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.boxx.porn.data.FirestoreRepository
-import com.boxx.porn.model.Device
-import com.boxx.porn.utils.DataHelper
-import com.boxx.porn.utils.DeviceIdHelper
+import com.boxx.datasync.data.repository.FirestoreRepository
+import com.boxx.datasync.domain.model.Device
+import com.boxx.datasync.data.util.DataHelper
+import com.boxx.datasync.data.util.DeviceIdHelper
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import android.os.Build
