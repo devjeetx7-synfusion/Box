@@ -1,0 +1,181 @@
+package com.boxx.datasync.ui.screen
+
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.boxx.datasync.ui.viewmodel.MainViewModel
+import com.boxx.datasync.utils.DeviceIdHelper
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(
+    viewModel: MainViewModel,
+    onSyncClick: () -> Unit,
+    showSettings: () -> Unit
+) {
+    val context = LocalContext.current
+    val deviceId = remember { DeviceIdHelper.getDeviceId(context) }
+    val syncStatus by viewModel.syncStatus.collectAsState()
+    val lastSyncTime by viewModel.lastSyncTime.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val isDemoMode by viewModel.isDemoMode.collectAsState()
+
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Data Sync", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = {
+                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                        context.startActivity(intent)
+                    }) {
+                        Icon(Icons.Default.Notifications, contentDescription = "Notification Access")
+                    }
+                    IconButton(onClick = showSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            // Educational Note
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        "Educational demo — do not use for unauthorized monitoring.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+
+            // Sync Status
+            Box(
+                modifier = Modifier.size(100.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.fillMaxSize())
+                } else {
+                    Icon(
+                        imageVector = if (syncStatus == "Up to date") Icons.Default.CheckCircle else Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        tint = if (syncStatus == "Up to date") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+
+            Text(
+                text = if (isDemoMode) "$syncStatus (Demo)" else syncStatus,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    InfoRow(label = "Device ID", value = deviceId)
+                    InfoRow(label = "Last Synced", value = lastSyncTime)
+
+                    HorizontalDivider()
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Enable Demo Sync", fontWeight = FontWeight.Bold)
+                            Text("Sync synthetic mock data", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = isDemoMode,
+                            onCheckedChange = { viewModel.toggleDemoMode(it) }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = onSyncClick,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                enabled = !isLoading
+            ) {
+                Text("Sync Now", fontSize = 18.sp)
+            }
+
+            TextButton(
+                onClick = { showDeleteConfirm = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Delete Synced Data")
+            }
+        }
+
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text("Delete Data?") },
+                text = { Text("This will remove all synced records for this device from the Firestore dashboard.") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showDeleteConfirm = false
+                            viewModel.deleteSyncedData()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun InfoRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontWeight = FontWeight.Bold)
+    }
+}

@@ -1,4 +1,4 @@
-package com.boxx.porn.utils
+package com.boxx.datasync.utils
 
 import android.content.Context
 import android.provider.Settings

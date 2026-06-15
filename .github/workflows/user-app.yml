@@ -78,7 +78,7 @@ jobs:
           BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
           BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 
-          APP_ID="com.boxx.porn"
+          APP_ID="com.boxx.datasync"
           VERSION_NAME="1.0"
           VERSION_CODE="1"
 
