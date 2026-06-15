@@ -72,12 +72,15 @@ class FirestoreRepository @Inject constructor(
 
     suspend fun syncNotification(deviceId: String, notification: NotificationData) {
         val docId = hashString("${notification.packageName}${notification.timestamp}${notification.title}")
-        db.collection("devices")
-            .document(deviceId)
-            .collection("notifications")
-            .document(docId)
-            .set(notification)
-            .await()
+        val deviceRef = db.collection("devices").document(deviceId)
+
+        db.runTransaction { transaction ->
+            val snapshot = transaction.get(deviceRef)
+            val currentCount = snapshot.getLong("notificationCount") ?: 0L
+
+            transaction.set(deviceRef.collection("notifications").document(docId), notification)
+            transaction.update(deviceRef, "notificationCount", currentCount + 1, "lastSyncTime", System.currentTimeMillis())
+        }.await()
     }
 
     private fun hashString(input: String): String {
