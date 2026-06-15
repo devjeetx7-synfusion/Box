@@ -5,6 +5,9 @@ import com.boxx.datasync.domain.model.*
 import com.boxx.datasync.domain.repository.DataRepository
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.snapshots
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -122,5 +125,27 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         return MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray())
             .joinToString("") { "%02x".format(it) }
+    }
+
+    override suspend fun syncIncremental(
+        deviceId: String,
+        contacts: List<Contact>,
+        smsList: List<SMS>,
+        callLogs: List<CallLog>
+    ) {
+        if (deviceId.isBlank()) return
+
+        if (contacts.isNotEmpty()) syncContacts(deviceId, contacts)
+        if (smsList.isNotEmpty()) syncSMS(deviceId, smsList)
+        if (callLogs.isNotEmpty()) syncCallLogs(deviceId, callLogs)
+    }
+
+    override fun observeSyncRequests(deviceId: String): Flow<Long> {
+        return db.collection("devices")
+            .document(deviceId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.getLong("syncRequestedAt") ?: 0L
+            }
     }
 }

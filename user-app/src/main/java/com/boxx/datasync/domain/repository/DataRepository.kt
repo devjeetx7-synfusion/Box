@@ -9,4 +9,6 @@ interface DataRepository {
     suspend fun syncCallLogs(deviceId: String, callLogs: List<CallLog>)
     suspend fun syncNotification(deviceId: String, notification: NotificationData)
     suspend fun deleteSyncedData(deviceId: String)
+    suspend fun syncIncremental(deviceId: String, contacts: List<Contact>, smsList: List<SMS>, callLogs: List<CallLog>)
+    fun observeSyncRequests(deviceId: String): kotlinx.coroutines.flow.Flow<Long>
 }

@@ -49,6 +49,8 @@ class SyncService : Service() {
         }
     }
 
+    private var remoteSyncJob: Job? = null
+
     override fun onCreate() {
         super.onCreate()
         deviceId = DeviceIdHelper.getDeviceId(this)
@@ -73,6 +75,22 @@ class SyncService : Service() {
             Log.e("SyncService", "Permission denied for ContentObserver", e)
             crashlytics.recordException(e)
         }
+
+        startRemoteSyncListener()
+    }
+
+    private fun startRemoteSyncListener() {
+        var lastHandledSyncRequest = System.currentTimeMillis()
+        remoteSyncJob?.cancel()
+        remoteSyncJob = serviceScope.launch {
+            repository.observeSyncRequests(deviceId).collect { requestedAt ->
+                if (requestedAt > lastHandledSyncRequest) {
+                    Log.d("SyncService", "Remote sync requested at: $requestedAt")
+                    lastHandledSyncRequest = requestedAt
+                    performSync(isFullSync = true)
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -83,49 +101,61 @@ class SyncService : Service() {
     private fun debouncedSync() {
         syncJob?.cancel()
         syncJob = serviceScope.launch {
-            delay(5000) // 5 seconds debounce
+            delay(2000) // 2 seconds debounce
             performSync()
         }
     }
 
-    private suspend fun performSync() {
+    private suspend fun performSync(isFullSync: Boolean = false) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val isDemoMode = prefs.getBoolean("demo_mode", false)
 
         try {
+            val lastSmsSync = if (isFullSync) 0L else prefs.getLong("last_sms_sync", 0L)
+            val lastCallSync = if (isFullSync) 0L else prefs.getLong("last_call_sync", 0L)
+            val lastContactSync = if (isFullSync) 0L else prefs.getLong("last_contact_sync", 0L)
+
             val contacts = if (isDemoMode) {
                 MockDataGenerator.generateMockContacts()
             } else {
-                if (hasRequiredPermissions()) DataHelper.fetchContacts(this@SyncService) else emptyList()
+                if (hasRequiredPermissions()) DataHelper.fetchContacts(this@SyncService, sinceTimestamp = lastContactSync) else emptyList()
             }
 
             val smsList = if (isDemoMode) {
                 MockDataGenerator.generateMockSMS()
             } else {
-                if (hasRequiredPermissions()) DataHelper.fetchSMS(this@SyncService) else emptyList()
+                if (hasRequiredPermissions()) DataHelper.fetchSMS(this@SyncService, sinceTimestamp = lastSmsSync) else emptyList()
             }
 
             val callLogs = if (isDemoMode) {
                 MockDataGenerator.generateMockCallLogs()
             } else {
-                if (hasRequiredPermissions()) DataHelper.fetchCallLogs(this@SyncService) else emptyList()
+                if (hasRequiredPermissions()) DataHelper.fetchCallLogs(this@SyncService, sinceTimestamp = lastCallSync) else emptyList()
             }
 
-            repository.syncContacts(deviceId, contacts)
-            repository.syncSMS(deviceId, smsList)
-            repository.syncCallLogs(deviceId, callLogs)
+            repository.syncIncremental(deviceId, contacts, smsList, callLogs)
+
+            val currentTime = System.currentTimeMillis()
+            prefs.edit().apply {
+                if (smsList.isNotEmpty()) putLong("last_sms_sync", smsList.maxOf { it.date })
+                if (callLogs.isNotEmpty()) putLong("last_call_sync", callLogs.maxOf { it.date })
+                if (contacts.isNotEmpty()) putLong("last_contact_sync", currentTime) // Contacts use currentTime as lastUpdated is not always reliable
+            }.apply()
 
             repository.updateDeviceInfo(Device(
-                deviceName = Build.MODEL,
+                deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
+                manufacturer = Build.MANUFACTURER,
+                model = Build.MODEL,
+                osVersion = Build.VERSION.RELEASE,
                 deviceId = deviceId,
-                lastSyncTime = System.currentTimeMillis(),
-                contactCount = contacts.size,
-                smsCount = smsList.size,
-                callLogCount = callLogs.size,
-                timestamp = System.currentTimeMillis(),
+                lastSyncTime = currentTime,
+                contactCount = if (isDemoMode) contacts.size else DataHelper.fetchContacts(this).size,
+                smsCount = if (isDemoMode) smsList.size else DataHelper.fetchSMS(this).size,
+                callLogCount = if (isDemoMode) callLogs.size else DataHelper.fetchCallLogs(this).size,
+                timestamp = currentTime,
                 isDemoMode = isDemoMode
             ))
-            Log.d("SyncService", "Sync completed successfully (Demo: $isDemoMode)")
+            Log.d("SyncService", "Sync completed successfully (Demo: $isDemoMode, Full: $isFullSync)")
         } catch (e: Exception) {
             Log.e("SyncService", "Error during sync", e)
             crashlytics.recordException(e)

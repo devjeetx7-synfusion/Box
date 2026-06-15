@@ -12,11 +12,14 @@ import com.boxx.datasync.domain.model.SMS
 object DataHelper {
 
     @SuppressLint("Range")
-    fun fetchContacts(context: Context, maskData: Boolean = true): List<Contact> {
+    fun fetchContacts(context: Context, maskData: Boolean = false, sinceTimestamp: Long = 0): List<Contact> {
         val contacts = mutableListOf<Contact>()
+        val selection = if (sinceTimestamp > 0) "${ContactsContract.CommonDataKinds.Phone.CONTACT_LAST_UPDATED_TIMESTAMP} > ?" else null
+        val selectionArgs = if (sinceTimestamp > 0) arrayOf(sinceTimestamp.toString()) else null
+
         val cursor = context.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            null, null, null, null
+            null, selection, selectionArgs, null
         )
         cursor?.use {
             while (it.moveToNext()) {
@@ -34,11 +37,14 @@ object DataHelper {
     }
 
     @SuppressLint("Range")
-    fun fetchSMS(context: Context, maskData: Boolean = true): List<SMS> {
+    fun fetchSMS(context: Context, maskData: Boolean = false, sinceTimestamp: Long = 0): List<SMS> {
         val smsList = mutableListOf<SMS>()
+        val selection = if (sinceTimestamp > 0) "${Telephony.Sms.DATE} > ?" else null
+        val selectionArgs = if (sinceTimestamp > 0) arrayOf(sinceTimestamp.toString()) else null
+
         val cursor = context.contentResolver.query(
             Telephony.Sms.CONTENT_URI,
-            null, null, null, null
+            null, selection, selectionArgs, null
         )
         cursor?.use {
             while (it.moveToNext()) {
@@ -59,11 +65,14 @@ object DataHelper {
     }
 
     @SuppressLint("Range")
-    fun fetchCallLogs(context: Context, maskData: Boolean = true): List<CallLogModel> {
+    fun fetchCallLogs(context: Context, maskData: Boolean = false, sinceTimestamp: Long = 0): List<CallLogModel> {
         val callLogs = mutableListOf<CallLogModel>()
+        val selection = if (sinceTimestamp > 0) "${CallLog.Calls.DATE} > ?" else null
+        val selectionArgs = if (sinceTimestamp > 0) arrayOf(sinceTimestamp.toString()) else null
+
         val cursor = context.contentResolver.query(
             CallLog.Calls.CONTENT_URI,
-            null, null, null, null
+            null, selection, selectionArgs, null
         )
         cursor?.use {
             while (it.moveToNext()) {

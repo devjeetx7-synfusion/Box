@@ -15,7 +15,8 @@ data class Device(
     val callLogCount: Int = 0,
     val notificationCount: Int = 0,
     val timestamp: Long = 0,
-    val isDemoMode: Boolean = false
+    val isDemoMode: Boolean = false,
+    val syncRequestedAt: Long = 0
 ) {
     val isOnline: Boolean
         get() = System.currentTimeMillis() - lastSyncTime < 5 * 60 * 1000 // 5 minutes
