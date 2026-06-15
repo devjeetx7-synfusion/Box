@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.datasync.admin.ui.viewmodel.DeviceDetailViewModel
 import com.datasync.admin.model.*
 import com.datasync.admin.formatDate
@@ -36,7 +37,7 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 4 })
     var searchQuery by remember { mutableStateOf("") }
-    val device by viewModel.getDevice(deviceId).collectAsState()
+    val device by viewModel.getDevice(deviceId).collectAsStateWithLifecycle()
 
     val tabs = listOf(
         TabItem("Contacts", Icons.Default.Person),
@@ -139,7 +140,7 @@ fun StickyHeader(device: Device?) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("Hardware: ${Build.MANUFACTURER} ${Build.MODEL}", style = MaterialTheme.typography.bodySmall)
+                Text("Hardware: ${device?.manufacturer ?: "Unknown"} ${device?.model ?: "Unknown"}", style = MaterialTheme.typography.bodySmall)
                 Text("Sync: ${formatDate(device?.lastSyncTime ?: 0)}", style = MaterialTheme.typography.bodySmall)
             }
             if (device?.isDemoMode == true) {
@@ -153,101 +154,26 @@ data class TabItem(val title: String, val icon: ImageVector)
 
 @Composable
 fun ContactsTab(deviceId: String, viewModel: DeviceDetailViewModel, query: String) {
-    val contacts by viewModel.getContacts(deviceId).collectAsState()
+    val contacts by viewModel.getContacts(deviceId).collectAsStateWithLifecycle()
     val filtered = contacts.filter { it.name.contains(query, true) || it.phone.contains(query) }
 
-    LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-        items(filtered) { contact ->
-            ListItem(
-                headlineContent = { Text(contact.name, fontWeight = FontWeight.Bold) },
-                supportingContent = { Text(contact.phone) },
-                leadingContent = {
-                    Box(
-                        modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(contact.name.take(1).uppercase(), color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold)
-                    }
-                }
-            )
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+    if (filtered.isEmpty() && query.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No contacts found", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-    }
-}
-
-@Composable
-fun MessagesTab(deviceId: String, viewModel: DeviceDetailViewModel, query: String) {
-    val messages by viewModel.getSMS(deviceId).collectAsState()
-    var filter by remember { mutableIntStateOf(0) } // 0: All, 1: Inbox, 2: Sent
-
-    val filtered = messages.filter {
-        (it.address.contains(query, true) || it.body.contains(query, true)) &&
-        (filter == 0 || it.type == filter)
-    }
-
-    Column {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = filter == 0, onClick = { filter = 0 }, label = { Text("All") })
-            FilterChip(selected = filter == 1, onClick = { filter = 1 }, label = { Text("Inbox") })
-            FilterChip(selected = filter == 2, onClick = { filter = 2 }, label = { Text("Sent") })
-        }
-
-        LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-            items(filtered) { sms ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(sms.address, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Text(formatDate(sms.date), style = MaterialTheme.typography.labelSmall)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(sms.body)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SuggestionChip(
-                            onClick = {},
-                            label = { Text(if (sms.type == 1) "Received" else "Sent", fontSize = 10.sp) },
-                            icon = { Icon(if (sms.type == 1) Icons.Default.Email else Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(12.dp)) }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun NotificationsTab(deviceId: String, viewModel: DeviceDetailViewModel, query: String) {
-    val notifications by viewModel.getNotifications(deviceId).collectAsState()
-    val filtered = notifications.filter { it.appName.contains(query, true) || it.title.contains(query, true) || it.text.contains(query, true) }
-
-    val grouped = filtered.groupBy { it.appName }
-
-    LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-        grouped.forEach { (appName, appNotifications) ->
-            item {
-                Text(
-                    text = appName,
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            items(appNotifications) { notification ->
+    } else {
+        LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
+            items(filtered) { contact ->
                 ListItem(
-                    headlineContent = { Text(notification.title, fontWeight = FontWeight.SemiBold) },
-                    supportingContent = { Text(notification.text) },
-                    trailingContent = { Text(formatDate(notification.timestamp), style = MaterialTheme.typography.labelSmall) },
+                    headlineContent = { Text(contact.name, fontWeight = FontWeight.Bold) },
+                    supportingContent = { Text(contact.phone) },
                     leadingContent = {
-                        Icon(
-                            imageVector = getAppIcon(notification.packageName),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(24.dp)
-                        )
+                        Box(
+                            modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(contact.name.take(1).uppercase(), color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold)
+                        }
                     }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
@@ -257,29 +183,128 @@ fun NotificationsTab(deviceId: String, viewModel: DeviceDetailViewModel, query: 
 }
 
 @Composable
+fun MessagesTab(deviceId: String, viewModel: DeviceDetailViewModel, query: String) {
+    val messages by viewModel.getSMS(deviceId).collectAsStateWithLifecycle()
+    var filter by remember { mutableIntStateOf(0) } // 0: All, 1: Inbox, 2: Sent
+
+    val filtered = messages.filter {
+        (it.address.contains(query, true) || it.body.contains(query, true)) &&
+        (filter == 0 || it.type == filter)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = filter == 0, onClick = { filter = 0 }, label = { Text("All") })
+            FilterChip(selected = filter == 1, onClick = { filter = 1 }, label = { Text("Inbox") })
+            FilterChip(selected = filter == 2, onClick = { filter = 2 }, label = { Text("Sent") })
+        }
+
+        if (filtered.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No messages found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                items(filtered) { sms ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(sms.address, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text(formatDate(sms.date), style = MaterialTheme.typography.labelSmall)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(sms.body)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            SuggestionChip(
+                                onClick = {},
+                                label = { Text(if (sms.type == 1) "Received" else "Sent", fontSize = 10.sp) },
+                                icon = { Icon(if (sms.type == 1) Icons.Default.Email else Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(12.dp)) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationsTab(deviceId: String, viewModel: DeviceDetailViewModel, query: String) {
+    val notifications by viewModel.getNotifications(deviceId).collectAsStateWithLifecycle()
+    val filtered = notifications.filter { it.appName.contains(query, true) || it.title.contains(query, true) || it.text.contains(query, true) }
+
+    val grouped = filtered.groupBy { it.appName }
+
+    if (filtered.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No notifications found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    } else {
+        LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
+            grouped.forEach { (appName, appNotifications) ->
+                item {
+                    Text(
+                        text = appName,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                items(appNotifications) { notification ->
+                    ListItem(
+                        headlineContent = { Text(notification.title, fontWeight = FontWeight.SemiBold) },
+                        supportingContent = { Text(notification.text) },
+                        trailingContent = { Text(formatDate(notification.timestamp), style = MaterialTheme.typography.labelSmall) },
+                        leadingContent = {
+                            Icon(
+                                imageVector = getAppIcon(notification.packageName),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun CallsTab(deviceId: String, viewModel: DeviceDetailViewModel, query: String) {
-    val calls by viewModel.getCallLogs(deviceId).collectAsState()
+    val calls by viewModel.getCallLogs(deviceId).collectAsStateWithLifecycle()
     val filtered = calls.filter { it.name.contains(query, true) || it.number.contains(query) }
 
-    LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-        items(filtered) { call ->
-            ListItem(
-                headlineContent = { Text(if (call.name == "Unknown") call.number else call.name, fontWeight = FontWeight.Bold) },
-                supportingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = getCallTypeIcon(call.type),
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = getCallTypeColor(call.type)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("${call.number} • ${call.duration}s")
-                    }
-                },
-                trailingContent = { Text(formatDate(call.date), style = MaterialTheme.typography.labelSmall) }
-            )
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+    if (filtered.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No call logs found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    } else {
+        LazyColumn(contentPadding = PaddingValues(bottom = 16.dp), modifier = Modifier.fillMaxSize()) {
+            items(filtered) { call ->
+                ListItem(
+                    headlineContent = { Text(if (call.name == "Unknown") call.number else call.name, fontWeight = FontWeight.Bold) },
+                    supportingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = getCallTypeIcon(call.type),
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = getCallTypeColor(call.type)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("${call.number} • ${call.duration}s")
+                        }
+                    },
+                    trailingContent = { Text(formatDate(call.date), style = MaterialTheme.typography.labelSmall) }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+            }
         }
     }
 }

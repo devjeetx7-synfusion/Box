@@ -16,7 +16,7 @@ import com.datasync.admin.ui.screen.DashboardScreen
 import com.datasync.admin.ui.DeviceDetailScreen
 import com.datasync.admin.ui.viewmodel.DashboardViewModel
 import com.datasync.admin.ui.viewmodel.DeviceDetailViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.AndroidEntryPoint
 import java.text.SimpleDateFormat
@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     NavHost(navController = navController, startDestination = "dashboard") {
                         composable("dashboard") {
-                            val dashboardViewModel: DashboardViewModel = viewModel()
+                            val dashboardViewModel: DashboardViewModel = hiltViewModel()
                             FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "Dashboard")
                             DashboardScreen(dashboardViewModel) { deviceId ->
                                 navController.navigate("details/$deviceId")
@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(navArgument("deviceId") { type = NavType.StringType })
                         ) { backStackEntry ->
                             val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
-                            val detailViewModel: DeviceDetailViewModel = viewModel()
+                            val detailViewModel: DeviceDetailViewModel = hiltViewModel()
                             FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "DeviceDetails")
                             FirebaseCrashlytics.getInstance().setCustomKey("target_device_id", deviceId)
                             DeviceDetailScreen(deviceId, detailViewModel) {

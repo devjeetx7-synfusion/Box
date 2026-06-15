@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.datasync.admin.formatDate
 import com.datasync.admin.ui.viewmodel.DashboardViewModel
 
@@ -20,7 +21,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     onDeviceClick: (String) -> Unit
 ) {
-    val devices by viewModel.devices.collectAsState()
+    val devices by viewModel.devices.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -29,38 +30,56 @@ fun DashboardScreen(
             )
         }
     ) { padding ->
-        if (devices.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("No devices found")
-            }
-        } else {
-            LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-                items(devices) { device ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .clickable { onDeviceClick(device.deviceId) },
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(device.deviceName, fontSize = 20.sp, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text("ID: ${device.deviceId}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(12.dp))
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (devices.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Searching for devices...")
+                    }
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+                    items(devices, key = { it.deviceId }) { device ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .clickable { onDeviceClick(device.deviceId) },
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(device.deviceName, fontSize = 20.sp, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                        Text("${device.manufacturer} ${device.model}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                    if (device.isDemoMode) {
+                                        SuggestionChip(onClick = {}, label = { Text("Demo") })
+                                    }
+                                }
+                                Text("ID: ${device.deviceId}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                MetricItem("Contacts", device.contactCount.toString())
-                                MetricItem("SMS", device.smsCount.toString())
-                                MetricItem("Calls", device.callLogCount.toString())
-                                MetricItem("Notes", device.notificationCount.toString())
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    MetricItem("Contacts", device.contactCount.toString())
+                                    MetricItem("SMS", device.smsCount.toString())
+                                    MetricItem("Calls", device.callLogCount.toString())
+                                    MetricItem("Notes", device.notificationCount.toString())
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    "Last Sync: ${formatDate(device.lastSyncTime)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
                             }
-
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                "Last Sync: ${formatDate(device.lastSyncTime)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
                         }
                     }
                 }
