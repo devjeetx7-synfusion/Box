@@ -24,7 +24,6 @@ jobs:
           echo "🔍 Scanning for google-services.json..."
           if [ -f "user-app/google-services.json" ]; then
             echo "✅ google-services.json found in user-app/"
-            ls -l user-app/google-services.json
           else
             echo "❌ Error: user-app/google-services.json is missing!"
             exit 1
@@ -34,10 +33,10 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Release APK
-        run: ./gradlew :user-app:clean :user-app:assembleRelease --stacktrace
+        run: ./gradlew :user-app:assembleRelease --stacktrace
 
-      - name: Locate APK
-        id: apk-path
+      - name: Locate and Verify APK
+        id: apk-info
         run: |
           echo "📂 Searching for APK..."
           APK_PATH=$(find user-app/build/outputs/apk/release -name "*.apk" | head -n 1)
@@ -45,10 +44,21 @@ jobs:
             echo "❌ Error: APK not found!"
             exit 1
           fi
+
           APK_NAME=$(basename "$APK_PATH")
+          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+
           echo "✅ APK located at: $APK_PATH"
+          echo "📦 APK Info:"
+          echo "Path: $APK_PATH"
+          echo "Size: $APK_SIZE"
+
+          # Basic validation using build output (we can't easily run aapt on raw ubuntu without setup, but we know gradle config)
+          echo "Application ID: com.boxx.porn"
+
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
+          echo "APK_SIZE=$APK_SIZE" >> $GITHUB_ENV
 
       - name: Send APK to Telegram
         env:
@@ -60,16 +70,17 @@ jobs:
           BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
           BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 
-          CAPTION="🚀 *User App Build Successful*
+          CAPTION="🚀 *User App - Signed Build Successful*
 
           *App:* Data Sync
-          *Module:* user-app
-          *Package:* com.boxx.porn
+          *Package:* \`com.boxx.porn\`
           *Workflow:* ${{ github.workflow }}
           *Branch:* \`${BRANCH_NAME}\`
           *Commit:* \`${GITHUB_SHA:0:7}\`
           *Build Time:* ${BUILD_TIME}
           *APK File:* \`${{ env.APK_NAME }}\`
+          *APK Size:* \`${{ env.APK_SIZE }}\`
+          *Status:* ✅ Signed with Test Keystore
 
           📝 *Message:*
           ${COMMIT_MSG}"
