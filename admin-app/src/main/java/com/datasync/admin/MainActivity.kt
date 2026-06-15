@@ -26,15 +26,11 @@ import com.datasync.admin.model.Contact
 import com.datasync.admin.model.Device
 import com.datasync.admin.model.SMS
 import com.google.firebase.crashlytics.FirebaseCrashlytics
-import dagger.hilt.android.AndroidEntryPoint
 import java.text.SimpleDateFormat
 import java.util.*
-import javax.inject.Inject
 
-@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    @Inject
-    lateinit var repository: FirestoreRepository
+    private val repository = FirestoreRepository()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
