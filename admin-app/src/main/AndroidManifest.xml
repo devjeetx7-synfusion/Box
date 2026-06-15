@@ -8,7 +8,7 @@
         android:allowBackup="true"
         android:label="Data Sync Admin"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Box">
+        android:theme="@style/Theme.DataSync">
 
         <activity
             android:name=".MainActivity"

