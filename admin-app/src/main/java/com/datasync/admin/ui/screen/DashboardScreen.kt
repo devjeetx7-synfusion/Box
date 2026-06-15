@@ -1,13 +1,18 @@
 package com.datasync.admin.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,6 +27,7 @@ fun DashboardScreen(
     onDeviceClick: (String) -> Unit
 ) {
     val devices by viewModel.devices.collectAsStateWithLifecycle()
+    var isRefreshing by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -30,7 +36,17 @@ fun DashboardScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                // Realtime listeners in Repository handle updates automatically via Firestore.
+                // Pull-to-refresh here serves as a visual confirmation/manual sync trigger.
+                isRefreshing = true
+                // We don't have a manual fetch function in repository yet, so we just reset refreshing state
+                isRefreshing = false
+            },
+            modifier = Modifier.padding(padding).fillMaxSize()
+        ) {
             if (devices.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -56,7 +72,16 @@ fun DashboardScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column {
-                                        Text(device.deviceName, fontSize = 20.sp, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (device.isOnline) Color.Green else Color.Gray)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(device.deviceName, fontSize = 20.sp, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                        }
                                         Text("${device.manufacturer} ${device.model}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                                     }
                                     if (device.isDemoMode) {
