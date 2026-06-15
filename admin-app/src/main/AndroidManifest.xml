@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:name=".AdminApplication"
         android:allowBackup="true"
         android:label="Data Sync Admin"
         android:supportsRtl="true"

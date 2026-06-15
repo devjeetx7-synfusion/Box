@@ -25,6 +25,7 @@ import com.datasync.admin.data.FirestoreRepository
 import com.datasync.admin.model.Contact
 import com.datasync.admin.model.Device
 import com.datasync.admin.model.SMS
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 NavHost(navController = navController, startDestination = "dashboard") {
                     composable("dashboard") {
+                        FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "Dashboard")
                         DashboardScreen(repository) { deviceId ->
                             navController.navigate("details/$deviceId")
                         }
@@ -47,6 +49,8 @@ class MainActivity : ComponentActivity() {
                         arguments = listOf(navArgument("deviceId") { type = NavType.StringType })
                     ) { backStackEntry ->
                         val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
+                        FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "DeviceDetails")
+                        FirebaseCrashlytics.getInstance().setCustomKey("target_device_id", deviceId)
                         DeviceDetailsScreen(deviceId, repository)
                     }
                 }

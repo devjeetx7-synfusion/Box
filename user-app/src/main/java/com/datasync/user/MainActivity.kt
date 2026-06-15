@@ -3,9 +3,10 @@ package com.datasync.user
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -19,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.work.*
 import com.datasync.user.sync.SyncService
@@ -58,29 +60,41 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SyncScreen() {
     val context = LocalContext.current
+    val activity = context as MainActivity
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val deviceId = remember { DeviceIdHelper.getDeviceId(context) }
     var lastSyncTime by remember { mutableStateOf("Never") }
     var syncStatus by remember { mutableStateOf("Idle") }
     var showRationale by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
-    val permissions = arrayOf(
-        Manifest.permission.READ_CONTACTS,
-        Manifest.permission.READ_SMS,
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.POST_NOTIFICATIONS else null
-    ).filterNotNull().toTypedArray()
+    val permissions = remember {
+        mutableListOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_SMS
+        ).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
+    }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { perms ->
-        val allGranted = perms.values.all { it }
+        val allGranted = perms.entries.filter { it.key != Manifest.permission.POST_NOTIFICATIONS }.all { it.value }
         if (allGranted) {
             startSyncService(context)
         } else {
-            scope.launch {
-                snackbarHostState.showSnackbar("Permissions are required for sync")
+            val showRationaleAgain = perms.keys.any { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
+            if (!showRationaleAgain) {
+                showSettingsDialog = true
+            } else {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Permissions are required for sync")
+                }
             }
         }
     }
@@ -96,9 +110,7 @@ fun SyncScreen() {
                 }
             }
 
-        if (!hasPermissions(context, permissions)) {
-            showRationale = true
-        } else {
+        if (hasPermissions(context, permissions)) {
             startSyncService(context)
         }
     }
@@ -122,6 +134,30 @@ fun SyncScreen() {
                 dismissButton = {
                     TextButton(onClick = { showRationale = false }) {
                         Text("Later")
+                    }
+                }
+            )
+        }
+
+        if (showSettingsDialog) {
+            AlertDialog(
+                onDismissRequest = { showSettingsDialog = false },
+                title = { Text("Permissions Permanently Denied") },
+                text = { Text("You have permanently denied some permissions. Please enable them in app settings to use the sync feature.") },
+                confirmButton = {
+                    Button(onClick = {
+                        showSettingsDialog = false
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }) {
+                        Text("Open Settings")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSettingsDialog = false }) {
+                        Text("Cancel")
                     }
                 }
             )
@@ -166,7 +202,12 @@ fun SyncScreen() {
                                 snackbarHostState.showSnackbar("Sync Started")
                             }
                         } else {
-                            launcher.launch(permissions)
+                            val shouldShowRationale = permissions.any { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
+                            if (shouldShowRationale) {
+                                showRationale = true
+                            } else {
+                                launcher.launch(permissions)
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp)
@@ -180,15 +221,23 @@ fun SyncScreen() {
 
 private fun hasPermissions(context: android.content.Context, permissions: Array<String>): Boolean {
     return permissions.all {
-        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        if (it == Manifest.permission.POST_NOTIFICATIONS && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            true
+        } else {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
     }
 }
 
 private fun startSyncService(context: android.content.Context) {
     val intent = Intent(context, SyncService::class.java)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
-    } else {
-        context.startService(intent)
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
 }
