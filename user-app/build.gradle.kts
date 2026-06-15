@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.datasync.user"
-    compileSdk = 34 // Current stable, user asked for "Target SDK 36" (not yet exists, assuming 34/35)
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.datasync.user"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 

@@ -28,17 +28,10 @@ class FirestoreRepository {
         val subscription = db.collection("devices")
             .document(deviceId)
             .collection("contacts")
-            .document("all")
+            .orderBy("name", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
-                    val list = snapshot.get("list") as? List<Map<String, Any>>
-                    val contacts = list?.map {
-                        Contact(
-                            name = it["name"] as? String ?: "",
-                            phone = it["phone"] as? String ?: "",
-                            lastUpdated = it["lastUpdated"] as? Long ?: 0
-                        )
-                    } ?: emptyList()
+                    val contacts = snapshot.toObjects(Contact::class.java)
                     trySend(contacts)
                 }
             }
@@ -49,18 +42,10 @@ class FirestoreRepository {
         val subscription = db.collection("devices")
             .document(deviceId)
             .collection("sms")
-            .document("all")
+            .orderBy("date", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, _ ->
                 if (snapshot != null) {
-                    val list = snapshot.get("list") as? List<Map<String, Any>>
-                    val smsList = list?.map {
-                        SMS(
-                            address = it["address"] as? String ?: "",
-                            body = it["body"] as? String ?: "",
-                            date = it["date"] as? Long ?: 0,
-                            type = (it["type"] as? Long)?.toInt() ?: 1
-                        )
-                    } ?: emptyList()
+                    val smsList = snapshot.toObjects(SMS::class.java)
                     trySend(smsList)
                 }
             }
