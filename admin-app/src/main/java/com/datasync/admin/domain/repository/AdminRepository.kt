@@ -9,4 +9,5 @@ interface AdminRepository {
     fun getSMS(deviceId: String): Flow<List<SMS>>
     fun getCallLogs(deviceId: String): Flow<List<CallLog>>
     fun getNotifications(deviceId: String): Flow<List<NotificationData>>
+    suspend fun requestSync(deviceId: String)
 }

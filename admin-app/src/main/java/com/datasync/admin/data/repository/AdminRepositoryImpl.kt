@@ -1,9 +1,11 @@
 package com.datasync.admin.data.repository
 
 import com.datasync.admin.domain.repository.AdminRepository
+import android.util.Log
 import com.datasync.admin.model.*
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -28,7 +30,7 @@ class AdminRepositoryImpl @Inject constructor(
         return db.collection("devices")
             .document(deviceId)
             .collection("contacts")
-            .orderBy("name")
+            .orderBy("name", Query.Direction.ASCENDING)
             .snapshots()
             .map { snapshot -> snapshot.toObjects(Contact::class.java) }
             .distinctUntilChanged()
@@ -62,5 +64,15 @@ class AdminRepositoryImpl @Inject constructor(
             .snapshots()
             .map { snapshot -> snapshot.toObjects(NotificationData::class.java) }
             .distinctUntilChanged()
+    }
+
+    override suspend fun requestSync(deviceId: String) {
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .set(mapOf("syncRequestedAt" to System.currentTimeMillis()), SetOptions.merge())
+        } catch (e: Exception) {
+            Log.e("AdminRepositoryImpl", "Error requesting sync", e)
+        }
     }
 }

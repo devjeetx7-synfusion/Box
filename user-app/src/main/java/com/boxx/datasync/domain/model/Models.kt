@@ -6,13 +6,17 @@ import com.google.firebase.firestore.IgnoreExtraProperties
 data class Device(
     val deviceId: String = "",
     val deviceName: String = "",
+    val manufacturer: String = "",
+    val model: String = "",
+    val osVersion: String = "",
     val lastSyncTime: Long = 0,
     val contactCount: Int = 0,
     val smsCount: Int = 0,
     val callLogCount: Int = 0,
     val notificationCount: Int = 0,
     val timestamp: Long = 0,
-    val isDemoMode: Boolean = false
+    val isDemoMode: Boolean = false,
+    val syncRequestedAt: Long = 0
 )
 
 @IgnoreExtraProperties
