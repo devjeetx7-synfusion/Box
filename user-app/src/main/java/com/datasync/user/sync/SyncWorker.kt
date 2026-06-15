@@ -5,7 +5,7 @@ import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.datasync.user.data.FirestoreRepository
-import com.datasync.user.model.DeviceInfo
+import com.datasync.user.model.Device
 import com.datasync.user.utils.DataHelper
 import com.datasync.user.utils.DeviceIdHelper
 
@@ -22,7 +22,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             repository.syncContacts(deviceId, contacts)
             repository.syncSMS(deviceId, smsList)
 
-            repository.updateDeviceInfo(DeviceInfo(
+            repository.updateDeviceInfo(Device(
                 deviceName = Build.MODEL,
                 deviceId = deviceId,
                 lastSyncTime = System.currentTimeMillis(),
