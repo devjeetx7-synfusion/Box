@@ -10,4 +10,7 @@ interface AdminRepository {
     fun getCallLogs(deviceId: String): Flow<List<CallLog>>
     fun getNotifications(deviceId: String): Flow<List<NotificationData>>
     suspend fun requestSync(deviceId: String)
+    suspend fun deleteItem(deviceId: String, collection: String, itemId: String)
+    suspend fun deleteAllItems(deviceId: String, collection: String)
+    suspend fun deleteDevice(deviceId: String)
 }

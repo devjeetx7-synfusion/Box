@@ -7,6 +7,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -71,8 +72,57 @@ class AdminRepositoryImpl @Inject constructor(
             db.collection("devices")
                 .document(deviceId)
                 .set(mapOf("syncRequestedAt" to System.currentTimeMillis()), SetOptions.merge())
+                .await()
         } catch (e: Exception) {
             Log.e("AdminRepositoryImpl", "Error requesting sync", e)
+        }
+    }
+
+    override suspend fun deleteItem(deviceId: String, collection: String, itemId: String) {
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .collection(collection)
+                .document(itemId)
+                .delete()
+                .await()
+        } catch (e: Exception) {
+            Log.e("AdminRepositoryImpl", "Error deleting item $itemId from $collection", e)
+        }
+    }
+
+    override suspend fun deleteAllItems(deviceId: String, collection: String) {
+        try {
+            val snapshot = db.collection("devices")
+                .document(deviceId)
+                .collection(collection)
+                .get()
+                .await()
+
+            val chunks = snapshot.documents.chunked(500)
+            for (chunk in chunks) {
+                val batch = db.batch()
+                for (doc in chunk) {
+                    batch.delete(doc.reference)
+                }
+                batch.commit().await()
+            }
+        } catch (e: Exception) {
+            Log.e("AdminRepositoryImpl", "Error deleting all items from $collection", e)
+        }
+    }
+
+    override suspend fun deleteDevice(deviceId: String) {
+        try {
+            // Delete sub-collections first
+            val collections = listOf("contacts", "sms", "calllogs", "notifications")
+            for (collection in collections) {
+                deleteAllItems(deviceId, collection)
+            }
+            // Delete device document
+            db.collection("devices").document(deviceId).delete().await()
+        } catch (e: Exception) {
+            Log.e("AdminRepositoryImpl", "Error deleting device $deviceId", e)
         }
     }
 }
