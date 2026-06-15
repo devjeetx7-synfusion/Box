@@ -27,8 +27,6 @@ jobs:
             ls -l user-app/google-services.json
           else
             echo "❌ Error: user-app/google-services.json is missing!"
-            # We don't exit 1 here if we want to try building anyway,
-            # but the task requires it to be present.
             exit 1
           fi
 
@@ -47,16 +45,10 @@ jobs:
             echo "❌ Error: APK not found!"
             exit 1
           fi
+          APK_NAME=$(basename "$APK_PATH")
           echo "✅ APK located at: $APK_PATH"
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "path=$APK_PATH" >> $GITHUB_OUTPUT
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: user-app-release
-          path: ${{ env.APK_PATH }}
-          retention-days: 7
+          echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
 
       - name: Send APK to Telegram
         env:
@@ -74,10 +66,10 @@ jobs:
           *Module:* user-app
           *Package:* com.boxx.porn
           *Workflow:* ${{ github.workflow }}
-          *Repo:* ${{ github.repository }}
           *Branch:* \`${BRANCH_NAME}\`
           *Commit:* \`${GITHUB_SHA:0:7}\`
           *Build Time:* ${BUILD_TIME}
+          *APK File:* \`${{ env.APK_NAME }}\`
 
           📝 *Message:*
           ${COMMIT_MSG}"
