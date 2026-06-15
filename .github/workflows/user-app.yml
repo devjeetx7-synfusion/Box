@@ -24,11 +24,8 @@ jobs:
           echo "🔍 Scanning for google-services.json..."
           if [ -f "user-app/google-services.json" ]; then
             echo "✅ google-services.json found in user-app/"
-            ls -l user-app/google-services.json
           else
             echo "❌ Error: user-app/google-services.json is missing!"
-            # We don't exit 1 here if we want to try building anyway,
-            # but the task requires it to be present.
             exit 1
           fi
 
@@ -41,22 +38,13 @@ jobs:
       - name: Locate APK
         id: apk-path
         run: |
-          echo "📂 Searching for APK..."
           APK_PATH=$(find user-app/build/outputs/apk/release -name "*.apk" | head -n 1)
           if [ -z "$APK_PATH" ]; then
             echo "❌ Error: APK not found!"
             exit 1
           fi
-          echo "✅ APK located at: $APK_PATH"
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "path=$APK_PATH" >> $GITHUB_OUTPUT
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: user-app-release
-          path: ${{ env.APK_PATH }}
-          retention-days: 7
+          echo "APK_NAME=$(basename $APK_PATH)" >> $GITHUB_ENV
 
       - name: Send APK to Telegram
         env:
@@ -64,40 +52,20 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         if: success() && env.BOT_TOKEN != '' && env.CHAT_ID != ''
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
           BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+          BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/})
 
           CAPTION="🚀 *User App Build Successful*
 
-          *App:* Data Sync
-          *Module:* user-app
-          *Package:* com.boxx.porn
+          *App Name:* Data Sync
           *Workflow:* ${{ github.workflow }}
-          *Repo:* ${{ github.repository }}
           *Branch:* \`${BRANCH_NAME}\`
-          *Commit:* \`${GITHUB_SHA:0:7}\`
+          *Commit SHA:* \`${GITHUB_SHA:0:7}\`
           *Build Time:* ${BUILD_TIME}
+          *APK File:* \`${{ env.APK_NAME }}\`"
 
-          📝 *Message:*
-          ${COMMIT_MSG}"
-
-          echo "📤 Uploading to Telegram..."
           curl -v -F chat_id="${CHAT_ID}" \
                -F document=@"${{ env.APK_PATH }}" \
                -F caption="${CAPTION}" \
                -F parse_mode="Markdown" \
                "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
-
-      - name: Notify Failure
-        if: failure()
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
-            curl -v -X POST \
-                 -H "Content-Type: application/json" \
-                 -d "{\"chat_id\": \"${CHAT_ID}\", \"text\": \"❌ *User App Build Failed*\n\nWorkflow: ${{ github.workflow }}\nRepo: ${{ github.repository }}\nBranch: ${GITHUB_REF#refs/heads/}\", \"parse_mode\": \"Markdown\"}" \
-                 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-          fi
