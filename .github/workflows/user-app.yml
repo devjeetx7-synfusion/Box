@@ -19,6 +19,30 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
+      - name: Recreate google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.USER_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "Error: USER_GOOGLE_SERVICES_JSON secret is not set!"
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICES_JSON" > user-app/google-services.json
+
+          # Validation
+          if [ -f "user-app/google-services.json" ]; then
+            echo "✅ google-services.json created successfully in user-app/"
+            # Check if it contains the expected package name
+            if grep -q "com.boxx.porn" user-app/google-services.json; then
+              echo "✅ Package name match verified in google-services.json"
+            else
+              echo "⚠️ Warning: Package name 'com.boxx.porn' not found in google-services.json"
+            fi
+          else
+            echo "❌ Failed to create google-services.json"
+            exit 1
+          fi
+
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
@@ -28,7 +52,6 @@ jobs:
       - name: Locate APK
         id: apk-path
         run: |
-          # Find the release APK in the user-app module
           APK_PATH=$(find user-app/build/outputs/apk/release -name "*.apk" | head -n 1)
           if [ -z "$APK_PATH" ]; then
             echo "Error: APK not found!"
