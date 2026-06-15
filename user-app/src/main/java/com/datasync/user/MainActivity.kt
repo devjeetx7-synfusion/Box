@@ -25,6 +25,7 @@ import com.datasync.user.sync.SyncService
 import com.datasync.user.sync.SyncWorker
 import com.datasync.user.utils.DeviceIdHelper
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -57,10 +58,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SyncScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     val deviceId = remember { DeviceIdHelper.getDeviceId(context) }
     var lastSyncTime by remember { mutableStateOf("Never") }
     var syncStatus by remember { mutableStateOf("Idle") }
     var showRationale by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
 
     val permissions = arrayOf(
         Manifest.permission.READ_CONTACTS,
@@ -75,18 +79,20 @@ fun SyncScreen() {
         if (allGranted) {
             startSyncService(context)
         } else {
-            Toast.makeText(context, "Permissions are required for sync", Toast.LENGTH_SHORT).show()
+            scope.launch {
+                snackbarHostState.showSnackbar("Permissions are required for sync")
+            }
         }
     }
 
     LaunchedEffect(Unit) {
-        // Fetch last sync time from Firestore if available
         FirebaseFirestore.getInstance().collection("devices").document(deviceId)
             .addSnapshotListener { snapshot, _ ->
                 snapshot?.getLong("lastSyncTime")?.let {
                     val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                     lastSyncTime = sdf.format(Date(it))
                     syncStatus = "Idle"
+                    isLoading = false
                 }
             }
 
@@ -97,66 +103,77 @@ fun SyncScreen() {
         }
     }
 
-    if (showRationale) {
-        AlertDialog(
-            onDismissRequest = { showRationale = false },
-            title = { Text("Permissions Required") },
-            text = { Text("This app needs access to your contacts and SMS to sync them to the cloud for backup and monitoring purposes.") },
-            confirmButton = {
-                Button(onClick = {
-                    showRationale = false
-                    launcher.launch(permissions)
-                }) {
-                    Text("Grant Permissions")
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        if (showRationale) {
+            AlertDialog(
+                onDismissRequest = { showRationale = false },
+                title = { Text("Permissions Required") },
+                text = { Text("This app needs access to your contacts and SMS to sync them to the cloud for backup and monitoring purposes.") },
+                confirmButton = {
+                    Button(onClick = {
+                        showRationale = false
+                        launcher.launch(permissions)
+                    }) {
+                        Text("Grant Permissions")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRationale = false }) {
+                        Text("Later")
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRationale = false }) {
-                    Text("Later")
-                }
-            }
-        )
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("Data Sync", fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Device ID: $deviceId", fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Last Sync: $lastSyncTime", fontWeight = FontWeight.Medium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Status: $syncStatus")
-            }
+            )
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Button(
-            onClick = {
-                if (hasPermissions(context, permissions)) {
-                    syncStatus = "Syncing..."
-                    startSyncService(context)
-                    Toast.makeText(context, "Sync Started", Toast.LENGTH_SHORT).show()
-                    // The service will update Firestore, which our listener will catch
-                } else {
-                    launcher.launch(permissions)
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(56.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Text("Sync Now")
+            Text("Data Sync", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Device ID: $deviceId", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Last Sync: $lastSyncTime", fontWeight = FontWeight.Medium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Status: $syncStatus")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            if (isLoading) {
+                CircularProgressIndicator()
+            } else {
+                Button(
+                    onClick = {
+                        if (hasPermissions(context, permissions)) {
+                            syncStatus = "Syncing..."
+                            isLoading = true
+                            startSyncService(context)
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Sync Started")
+                            }
+                        } else {
+                            launcher.launch(permissions)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                ) {
+                    Text("Sync Now")
+                }
+            }
         }
     }
 }

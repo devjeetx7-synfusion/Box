@@ -17,25 +17,24 @@ import com.datasync.user.data.FirestoreRepository
 import com.datasync.user.model.DeviceInfo
 import com.datasync.user.utils.DataHelper
 import com.datasync.user.utils.DeviceIdHelper
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 
 class SyncService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private val repository = FirestoreRepository()
     private lateinit var deviceId: String
 
+    private var syncJob: Job? = null
+
     private val contactObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
-            syncData()
+            debouncedSync()
         }
     }
 
     private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
-            syncData()
+            debouncedSync()
         }
     }
 
@@ -50,12 +49,20 @@ class SyncService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        syncData()
+        debouncedSync()
         return START_STICKY
     }
 
-    private fun syncData() {
-        serviceScope.launch {
+    private fun debouncedSync() {
+        syncJob?.cancel()
+        syncJob = serviceScope.launch {
+            delay(5000) // 5 seconds debounce
+            performSync()
+        }
+    }
+
+    private suspend fun performSync() {
+        try {
             val contacts = DataHelper.fetchContacts(this@SyncService)
             val smsList = DataHelper.fetchSMS(this@SyncService)
 
@@ -70,6 +77,8 @@ class SyncService : Service() {
                 smsCount = smsList.size,
                 timestamp = System.currentTimeMillis()
             ))
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -101,6 +110,7 @@ class SyncService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel()
         contentResolver.unregisterContentObserver(contactObserver)
         contentResolver.unregisterContentObserver(smsObserver)
     }
