@@ -1,4 +1,4 @@
-package com.boxx.porn.model
+package com.boxx.datasync.domain.model
 
 import com.google.firebase.firestore.IgnoreExtraProperties
 
@@ -11,7 +11,8 @@ data class Device(
     val smsCount: Int = 0,
     val callLogCount: Int = 0,
     val notificationCount: Int = 0,
-    val timestamp: Long = 0
+    val timestamp: Long = 0,
+    val isDemoMode: Boolean = false
 )
 
 @IgnoreExtraProperties
