@@ -80,13 +80,16 @@ class SyncService : Service() {
     }
 
     private fun startRemoteSyncListener() {
-        var lastHandledSyncRequest = System.currentTimeMillis()
+        var lastHandledSyncRequest = PreferenceManager.getDefaultSharedPreferences(this).getLong("last_handled_sync_request", 0L)
         remoteSyncJob?.cancel()
         remoteSyncJob = serviceScope.launch {
             repository.observeSyncRequests(deviceId).collect { requestedAt ->
                 if (requestedAt > lastHandledSyncRequest) {
                     Log.d("SyncService", "Remote sync requested at: $requestedAt")
                     lastHandledSyncRequest = requestedAt
+                    PreferenceManager.getDefaultSharedPreferences(this@SyncService).edit()
+                        .putLong("last_handled_sync_request", lastHandledSyncRequest)
+                        .apply()
                     performSync(isFullSync = true)
                 }
             }
@@ -153,7 +156,8 @@ class SyncService : Service() {
                 smsCount = if (isDemoMode) smsList.size else DataHelper.fetchSMS(this).size,
                 callLogCount = if (isDemoMode) callLogs.size else DataHelper.fetchCallLogs(this).size,
                 timestamp = currentTime,
-                isDemoMode = isDemoMode
+                isDemoMode = isDemoMode,
+                syncRequestedAt = prefs.getLong("last_handled_sync_request", 0L)
             ))
             Log.d("SyncService", "Sync completed successfully (Demo: $isDemoMode, Full: $isFullSync)")
         } catch (e: Exception) {

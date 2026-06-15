@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.navigation.NavType
@@ -28,14 +30,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            val dashboardViewModel: DashboardViewModel = hiltViewModel()
+            val themeMode by dashboardViewModel.themeMode.collectAsState()
+
+            val darkTheme = when (themeMode) {
+                "Light" -> false
+                "Dark" -> true
+                else -> isSystemInDarkTheme()
+            }
+
             MaterialTheme(
-                colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+                colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
             ) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     val navController = rememberNavController()
                     NavHost(navController = navController, startDestination = "dashboard") {
                         composable("dashboard") {
-                            val dashboardViewModel: DashboardViewModel = hiltViewModel()
                             FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "Dashboard")
                             DashboardScreen(dashboardViewModel) { deviceId ->
                                 navController.navigate("details/$deviceId")
