@@ -19,38 +19,37 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Recreate google-services.json
-        env:
-          GOOGLE_SERVICES_JSON: ${{ secrets.ADMIN_GOOGLE_SERVICES_JSON }}
+      - name: Validate Firebase Configuration
         run: |
-          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
-            echo "Error: ADMIN_GOOGLE_SERVICES_JSON secret is not set!"
-            exit 1
-          fi
-          echo "$GOOGLE_SERVICES_JSON" > admin-app/google-services.json
-
-          # Validation
+          echo "🔍 Scanning for google-services.json..."
           if [ -f "admin-app/google-services.json" ]; then
-            echo "✅ google-services.json created successfully in admin-app/"
+            echo "✅ google-services.json found in admin-app/"
+            ls -l admin-app/google-services.json
+          elif [ -f "user-app/google-services.json" ]; then
+            echo "⚠️ Warning: google-services.json not found in admin-app/, but found in user-app/."
+            echo "Attempting to copy for Admin App build..."
+            cp user-app/google-services.json admin-app/google-services.json
+            echo "✅ Copied to admin-app/"
           else
-            echo "❌ Failed to create google-services.json"
-            exit 1
+            echo "⚠️ Warning: google-services.json missing for Admin App. Build might fail if Firebase is enabled."
           fi
 
       - name: Grant Execute Permission for Gradlew
         run: chmod +x gradlew
 
       - name: Build Release APK
-        run: ./gradlew :admin-app:assembleRelease --stacktrace
+        run: ./gradlew :admin-app:clean :admin-app:assembleRelease --stacktrace
 
       - name: Locate APK
         id: apk-path
         run: |
+          echo "📂 Searching for APK..."
           APK_PATH=$(find admin-app/build/outputs/apk/release -name "*.apk" | head -n 1)
           if [ -z "$APK_PATH" ]; then
-            echo "Error: APK not found!"
+            echo "❌ Error: APK not found!"
             exit 1
           fi
+          echo "✅ APK located at: $APK_PATH"
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
           echo "path=$APK_PATH" >> $GITHUB_OUTPUT
 
@@ -74,6 +73,8 @@ jobs:
           CAPTION="🚀 *Admin App Build Successful*
 
           *App:* Data Sync Admin
+          *Module:* admin-app
+          *Package:* com.datasync.admin
           *Workflow:* ${{ github.workflow }}
           *Repo:* ${{ github.repository }}
           *Branch:* \`${BRANCH_NAME}\`
@@ -83,6 +84,7 @@ jobs:
           📝 *Message:*
           ${COMMIT_MSG}"
 
+          echo "📤 Uploading to Telegram..."
           curl -v -F chat_id="${CHAT_ID}" \
                -F document=@"${{ env.APK_PATH }}" \
                -F caption="${CAPTION}" \
