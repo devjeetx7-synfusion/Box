@@ -16,7 +16,10 @@ data class Device(
     val notificationCount: Int = 0,
     val timestamp: Long = 0,
     val isDemoMode: Boolean = false
-)
+) {
+    val isOnline: Boolean
+        get() = System.currentTimeMillis() - lastSyncTime < 5 * 60 * 1000 // 5 minutes
+}
 
 @IgnoreExtraProperties
 data class Contact(

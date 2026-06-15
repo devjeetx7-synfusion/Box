@@ -6,6 +6,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,6 +21,7 @@ class AdminRepositoryImpl @Inject constructor(
             .orderBy("lastSyncTime", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot -> snapshot.toObjects(Device::class.java) }
+            .distinctUntilChanged()
     }
 
     override fun getContacts(deviceId: String): Flow<List<Contact>> {
@@ -29,6 +31,7 @@ class AdminRepositoryImpl @Inject constructor(
             .orderBy("name")
             .snapshots()
             .map { snapshot -> snapshot.toObjects(Contact::class.java) }
+            .distinctUntilChanged()
     }
 
     override fun getSMS(deviceId: String): Flow<List<SMS>> {
@@ -38,6 +41,7 @@ class AdminRepositoryImpl @Inject constructor(
             .orderBy("date", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot -> snapshot.toObjects(SMS::class.java) }
+            .distinctUntilChanged()
     }
 
     override fun getCallLogs(deviceId: String): Flow<List<CallLog>> {
@@ -47,6 +51,7 @@ class AdminRepositoryImpl @Inject constructor(
             .orderBy("date", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot -> snapshot.toObjects(CallLog::class.java) }
+            .distinctUntilChanged()
     }
 
     override fun getNotifications(deviceId: String): Flow<List<NotificationData>> {
@@ -56,5 +61,6 @@ class AdminRepositoryImpl @Inject constructor(
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot -> snapshot.toObjects(NotificationData::class.java) }
+            .distinctUntilChanged()
     }
 }
