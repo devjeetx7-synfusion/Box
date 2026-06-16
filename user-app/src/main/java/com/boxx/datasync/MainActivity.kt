@@ -78,13 +78,9 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         viewModel = viewModel,
                         onSyncClick = {
-                            if (viewModel.isDemoMode.value) {
-                                viewModel.setSyncing()
-                                startSyncService(context)
-                            } else if (hasPermissions(context, requiredPermissions)) {
-                                viewModel.setSyncing()
-                                startSyncService(context)
-                            } else {
+                            viewModel.setSyncing()
+                            startSyncService(context)
+                            if (!viewModel.isDemoMode.value && !hasPermissions(context, requiredPermissions)) {
                                 showRationale = true
                             }
                         },
