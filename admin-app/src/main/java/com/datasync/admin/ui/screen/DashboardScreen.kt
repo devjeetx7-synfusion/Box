@@ -148,7 +148,7 @@ fun DashboardList(devices: List<Device>, onDeviceClick: (String) -> Unit) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         MetricItem("Contacts", device.contactCount.toString())
                         MetricItem("SMS", device.smsCount.toString())
-                        MetricItem("Calls", device.callLogCount.toString())
+                        MetricItem("Calls", device.callCount.toString())
                         MetricItem("Notifications", device.notificationCount.toString())
                     }
 

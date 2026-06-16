@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface AdminRepository {
     fun getDevices(): Flow<List<Device>>
+    fun getDevice(deviceId: String): Flow<Device?>
     fun getContacts(deviceId: String): Flow<List<Contact>>
     fun getSMS(deviceId: String): Flow<List<SMS>>
     fun getCallLogs(deviceId: String): Flow<List<CallLog>>

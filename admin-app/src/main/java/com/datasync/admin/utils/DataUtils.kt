@@ -23,11 +23,17 @@ object DataUtils {
             return when {
                 diff < 60 * 1000 -> "Just now"
                 diff < 60 * 60 * 1000 -> "${diff / (60 * 1000)} min ago"
-                else -> "${diff / (3600 * 1000)} hours ago"
+                else -> formatTime12h(timestamp)
             }
         }
 
         val sdf = SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault())
+        return sdf.format(Date(timestamp))
+    }
+
+    fun formatTime12h(timestamp: Long): String {
+        if (timestamp == 0L) return "N/A"
+        val sdf = SimpleDateFormat("hh:mm a", Locale.getDefault())
         return sdf.format(Date(timestamp))
     }
 
