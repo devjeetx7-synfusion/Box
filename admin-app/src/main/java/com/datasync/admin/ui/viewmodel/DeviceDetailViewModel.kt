@@ -51,6 +51,15 @@ class DeviceDetailViewModel @Inject constructor(
     private val _syncStatus = MutableStateFlow<SyncStatus>(SyncStatus.Idle)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(15000)
+            if (_uiState.value is DeviceDetailUiState.Loading) {
+                _uiState.value = DeviceDetailUiState.Error("Loading timeout. Device might be offline or deleted.")
+            }
+        }
+    }
+
     val themeMode = settingsManager.themeMode.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),

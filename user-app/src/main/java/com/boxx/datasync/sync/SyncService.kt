@@ -54,6 +54,10 @@ class SyncService : Service() {
     override fun onCreate() {
         super.onCreate()
         deviceId = DeviceIdHelper.getDeviceId(this)
+        if (deviceId.isBlank()) {
+            stopSelf()
+            return
+        }
         createNotificationChannel()
 
         val notification = createNotification()
@@ -152,9 +156,10 @@ class SyncService : Service() {
                 osVersion = Build.VERSION.RELEASE,
                 deviceId = deviceId,
                 lastSyncTime = currentTime,
-                contactCount = if (isDemoMode) contacts.size else DataHelper.fetchContacts(this).size,
-                smsCount = if (isDemoMode) smsList.size else DataHelper.fetchSMS(this).size,
-                callLogCount = if (isDemoMode) callLogs.size else DataHelper.fetchCallLogs(this).size,
+                contactCount = if (isDemoMode) contacts.size else DataHelper.fetchContacts(this@SyncService).size,
+                smsCount = if (isDemoMode) smsList.size else DataHelper.fetchSMS(this@SyncService).size,
+                callLogCount = if (isDemoMode) callLogs.size else DataHelper.fetchCallLogs(this@SyncService).size,
+                notificationCount = if (isDemoMode) 0 else 0, // Placeholder as notifications are handled by listener
                 timestamp = currentTime,
                 isDemoMode = isDemoMode,
                 syncRequestedAt = prefs.getLong("last_handled_sync_request", 0L)
