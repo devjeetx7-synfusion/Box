@@ -31,21 +31,21 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
     }
 
     override suspend fun syncContacts(deviceId: String, contacts: List<Contact>) {
-        syncCollection(deviceId, "contacts", contacts) { hashString(it.phone) }
+        syncCollection(deviceId, "contacts", contacts) { it.id.ifBlank { hashString(it.phone) } }
     }
 
     override suspend fun syncSMS(deviceId: String, smsList: List<SMS>) {
-        syncCollection(deviceId, "sms", smsList) { hashString("${it.address}${it.date}${it.body}") }
+        syncCollection(deviceId, "sms", smsList) { it.id.ifBlank { hashString("${it.address}${it.date}${it.body}") } }
     }
 
     override suspend fun syncCallLogs(deviceId: String, callLogs: List<CallLog>) {
-        syncCollection(deviceId, "calllogs", callLogs) { hashString("${it.number}${it.date}${it.type}") }
+        syncCollection(deviceId, "calllogs", callLogs) { it.id.ifBlank { hashString("${it.number}${it.date}${it.type}") } }
     }
 
     override suspend fun syncNotification(deviceId: String, notification: NotificationData) {
         if (deviceId.isBlank()) return
         try {
-            val docId = hashString("${notification.packageName}${notification.timestamp}${notification.title}")
+            val docId = notification.id.ifBlank { hashString("${notification.packageName}${notification.timestamp}${notification.title}") }
             db.collection("devices")
                 .document(deviceId)
                 .collection("notifications")

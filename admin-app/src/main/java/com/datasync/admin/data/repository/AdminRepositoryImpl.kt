@@ -93,16 +93,18 @@ class AdminRepositoryImpl @Inject constructor(
 
     override suspend fun deleteAllItems(deviceId: String, collection: String) {
         try {
-            val snapshot = db.collection("devices")
-                .document(deviceId)
-                .collection(collection)
-                .get()
-                .await()
+            while (true) {
+                val snapshot = db.collection("devices")
+                    .document(deviceId)
+                    .collection(collection)
+                    .limit(500)
+                    .get()
+                    .await()
 
-            val chunks = snapshot.documents.chunked(500)
-            for (chunk in chunks) {
+                if (snapshot.isEmpty) break
+
                 val batch = db.batch()
-                for (doc in chunk) {
+                for (doc in snapshot.documents) {
                     batch.delete(doc.reference)
                 }
                 batch.commit().await()

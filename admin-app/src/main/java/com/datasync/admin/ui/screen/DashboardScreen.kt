@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -56,8 +56,9 @@ fun DashboardScreen(
                     }
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-                    items(devices, key = { it.deviceId }) { device ->
+                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp)) {
+                    itemsIndexed(devices, key = { _, device -> device.deviceId }) { index, device ->
+                        Text("#${index + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 4.dp))
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -65,44 +66,46 @@ fun DashboardScreen(
                                 .clickable { onDeviceClick(device.deviceId) },
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(if (device.isOnline) Color.Green else Color.Gray)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(device.deviceName, fontSize = 20.sp, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val statusColor = when {
+                                            System.currentTimeMillis() - device.syncRequestedAt < 30000 && device.syncRequestedAt > device.lastSyncTime -> Color(0xFFFFA500) // Orange
+                                            device.isOnline -> Color.Green
+                                            else -> Color.Red
                                         }
-                                        Text("${device.manufacturer} ${device.model}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(CircleShape)
+                                                .background(statusColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(device.deviceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                     }
                                     if (device.isDemoMode) {
-                                        SuggestionChip(onClick = {}, label = { Text("Demo") })
+                                        SuggestionChip(onClick = {}, label = { Text("Demo") }, modifier = Modifier.height(24.dp))
                                     }
                                 }
-                                Text("ID: ${device.deviceId}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("${device.manufacturer} ${device.model} • ${device.deviceId.takeLast(6)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                Spacer(modifier = Modifier.height(8.dp))
 
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     MetricItem("Contacts", device.contactCount.toString())
                                     MetricItem("SMS", device.smsCount.toString())
                                     MetricItem("Calls", device.callLogCount.toString())
-                                    MetricItem("Notes", device.notificationCount.toString())
+                                    MetricItem("Notifications", device.notificationCount.toString())
                                 }
 
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    "Last Sync: ${formatDate(device.lastSyncTime)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.secondary
+                                    "Sync: ${formatDate(device.lastSyncTime)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
                                 )
                             }
                         }
