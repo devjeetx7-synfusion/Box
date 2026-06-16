@@ -7,6 +7,7 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
@@ -141,11 +142,16 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
     }
 
     override fun observeSyncRequests(deviceId: String): Flow<Long> {
+        if (deviceId.isBlank()) return kotlinx.coroutines.flow.flowOf(0L)
         return db.collection("devices")
             .document(deviceId)
             .snapshots()
             .map { snapshot ->
                 snapshot.getLong("syncRequestedAt") ?: 0L
+            }
+            .catch { e ->
+                Log.e("DataRepositoryImpl", "Error observing sync requests", e)
+                emit(0L)
             }
     }
 }

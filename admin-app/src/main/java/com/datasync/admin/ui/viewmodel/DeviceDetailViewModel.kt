@@ -1,5 +1,6 @@
 package com.datasync.admin.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,9 +8,16 @@ import com.datasync.admin.data.local.SettingsManager
 import com.datasync.admin.domain.repository.AdminRepository
 import com.datasync.admin.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+sealed class DeviceDetailUiState {
+    object Loading : DeviceDetailUiState()
+    data class Success(val device: Device) : DeviceDetailUiState()
+    data class Error(val message: String) : DeviceDetailUiState()
+}
 
 @HiltViewModel
 class DeviceDetailViewModel @Inject constructor(
@@ -18,7 +26,15 @@ class DeviceDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Log.e("DeviceDetailViewModel", "Background error", throwable)
+        _syncStatus.value = SyncStatus.Failed
+    }
+
     val deviceId: String = savedStateHandle["deviceId"] ?: ""
+
+    private val _uiState = MutableStateFlow<DeviceDetailUiState>(DeviceDetailUiState.Loading)
+    val uiState: StateFlow<DeviceDetailUiState> = _uiState.asStateFlow()
 
     private val _selectedApp = MutableStateFlow("All")
     val selectedApp: StateFlow<String> = _selectedApp.asStateFlow()
@@ -64,98 +80,124 @@ class DeviceDetailViewModel @Inject constructor(
     }
 
     fun requestSync() {
-        viewModelScope.launch {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
             _syncStatus.value = SyncStatus.Syncing
             repository.requestSync(deviceId)
-            // We assume success if no exception, but real status comes from device lastSyncTime update
-            // For UI feedback we can set a timeout or wait for device update
         }
     }
 
     fun deleteItem(collection: String, itemId: String) {
-        viewModelScope.launch {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
             repository.deleteItem(deviceId, collection, itemId)
         }
     }
 
     fun deleteAllVisible(collection: String, items: List<Any>) {
-        viewModelScope.launch {
-            // In a real app we might want to delete only filtered items,
-            // but for "Delete All Visible" usually it means clear that view.
-            // If items is empty, we do nothing.
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
             if (items.isEmpty()) return@launch
             repository.deleteAllItems(deviceId, collection)
         }
     }
 
     fun deleteDevice() {
-        viewModelScope.launch {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
             repository.deleteDevice(deviceId)
         }
     }
 
-    val device: StateFlow<Device?> = repository.getDevices()
-        .map { devices -> devices.find { it.deviceId == deviceId } }
-        .distinctUntilChanged()
-        .onEach { device ->
-            if (device != null) {
-                val now = System.currentTimeMillis()
-                _syncStatus.value = when {
-                    device.syncRequestedAt > device.lastSyncTime && (now - device.syncRequestedAt) < 30000 -> SyncStatus.Syncing
-                    now - device.lastSyncTime < 60000 -> SyncStatus.Success
-                    now - device.lastSyncTime > 5 * 60000 -> SyncStatus.Offline
-                    else -> SyncStatus.Idle
+    val device: StateFlow<Device?> = if (deviceId.isBlank()) {
+        MutableStateFlow<Device?>(null).asStateFlow()
+    } else {
+        repository.getDevices()
+            .map { devices -> devices.find { it.deviceId == deviceId } }
+            .distinctUntilChanged()
+            .onEach { device ->
+                if (device != null) {
+                    val now = System.currentTimeMillis()
+                    _syncStatus.value = when {
+                        device.syncRequestedAt > device.lastSyncTime && (now - device.syncRequestedAt) < 30000 -> SyncStatus.Syncing
+                        now - device.lastSyncTime < 60000 -> SyncStatus.Success
+                        now - device.lastSyncTime > 5 * 60000 -> SyncStatus.Offline
+                        else -> SyncStatus.Idle
+                    }
+                    _uiState.value = DeviceDetailUiState.Success(device)
+                } else {
+                    _uiState.value = DeviceDetailUiState.Error("Device not found")
                 }
             }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }
 
-    val contacts: StateFlow<List<Contact>> = combine(
-        repository.getContacts(deviceId),
-        _searchQuery
-    ) { contacts, query ->
-        contacts.filter { it.name.contains(query, true) || it.phone.contains(query) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val contacts: StateFlow<List<Contact>> = if (deviceId.isBlank()) {
+        MutableStateFlow(emptyList<Contact>()).asStateFlow()
+    } else {
+        combine(
+            repository.getContacts(deviceId),
+            _searchQuery
+        ) { contacts, query ->
+            contacts.filter { it.name.contains(query, true) || it.phone.contains(query) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
 
-    val sms: StateFlow<List<SMS>> = combine(
-        repository.getSMS(deviceId),
-        _searchQuery,
-        _smsFilter
-    ) { sms, query, filter ->
-        sms.filter {
-            (it.address.contains(query, true) || it.body.contains(query, true)) &&
-                    (filter == 0 || it.type == filter)
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val sms: StateFlow<List<SMS>> = if (deviceId.isBlank()) {
+        MutableStateFlow(emptyList<SMS>()).asStateFlow()
+    } else {
+        combine(
+            repository.getSMS(deviceId),
+            _searchQuery,
+            _smsFilter
+        ) { sms, query, filter ->
+            sms.filter {
+                (it.address.contains(query, true) || it.body.contains(query, true)) &&
+                        (filter == 0 || it.type == filter)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
 
-    val callLogs: StateFlow<List<CallLog>> = combine(
-        repository.getCallLogs(deviceId),
-        _searchQuery,
-        _callFilter
-    ) { calls, query, filter ->
-        calls.filter {
-            (it.name.contains(query, true) || it.number.contains(query)) &&
-                    (filter == 0 || it.type == filter)
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val callLogs: StateFlow<List<CallLog>> = if (deviceId.isBlank()) {
+        MutableStateFlow(emptyList<CallLog>()).asStateFlow()
+    } else {
+        combine(
+            repository.getCallLogs(deviceId),
+            _searchQuery,
+            _callFilter
+        ) { calls, query, filter ->
+            calls.filter {
+                (it.name.contains(query, true) || it.number.contains(query)) &&
+                        (filter == 0 || it.type == filter)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
 
-    val notifications: StateFlow<List<NotificationData>> = combine(
-        repository.getNotifications(deviceId),
-        _searchQuery,
-        _selectedApp
-    ) { notifications, query, app ->
-        notifications.filter {
-            (app == "All" || it.appName == app) &&
-                    (it.appName.contains(query, true) || it.title.contains(query, true) || it.text.contains(query, true))
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val notifications: StateFlow<List<NotificationData>> = if (deviceId.isBlank()) {
+        MutableStateFlow(emptyList<NotificationData>()).asStateFlow()
+    } else {
+        combine(
+            repository.getNotifications(deviceId),
+            _searchQuery,
+            _selectedApp
+        ) { notifications, query, app ->
+            notifications.filter {
+                (app == "All" || it.appName == app) &&
+                        (it.appName.contains(query, true) || it.title.contains(query, true) || it.text.contains(query, true))
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
 
-    val appFilters: StateFlow<Map<String, Int>> = repository.getNotifications(deviceId)
-        .map { notifications ->
-            val counts = notifications.groupBy { it.appName }.mapValues { it.value.size }
-            mapOf("All" to notifications.size) + counts
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), mapOf("All" to 0))
+    val appFilters: StateFlow<Map<String, Int>> = if (deviceId.isBlank()) {
+        MutableStateFlow(mapOf("All" to 0)).asStateFlow()
+    } else {
+        repository.getNotifications(deviceId)
+            .map { notifications ->
+                val counts = notifications.groupBy { it.appName }.mapValues { it.value.size }
+                mapOf("All" to notifications.size) + counts
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), mapOf("All" to 0))
+    }
 }
 
 sealed class SyncStatus {

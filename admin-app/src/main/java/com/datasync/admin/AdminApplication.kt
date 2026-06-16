@@ -2,6 +2,7 @@ package com.datasync.admin
 
 import android.app.Application
 import android.os.Build
+import com.datasync.admin.utils.GlobalExceptionHandler
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.HiltAndroidApp
@@ -10,6 +11,7 @@ import dagger.hilt.android.HiltAndroidApp
 class AdminApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        GlobalExceptionHandler.initialize(this)
         FirebaseApp.initializeApp(this)
 
         val crashlytics = FirebaseCrashlytics.getInstance()
