@@ -92,4 +92,37 @@ class MainViewModel @Inject constructor(
             _syncStatus.value = "Data Deleted"
         }
     }
+
+    fun testFirebaseConnection() {
+        _isLoading.value = true
+        _syncStatus.value = "Testing Firebase..."
+
+        val app = com.google.firebase.FirebaseApp.getInstance()
+        val projectId = app.options.projectId
+        val appId = app.options.applicationId
+        val packageName = getApplication<Application>().packageName
+
+        val testDoc = mapOf(
+            "timestamp" to System.currentTimeMillis(),
+            "status" to "Health check successful",
+            "projectId" to projectId,
+            "appId" to appId,
+            "packageName" to packageName
+        )
+        FirebaseFirestore.getInstance().collection("debug")
+            .document("client_test")
+            .collection(deviceId)
+            .document("test_doc")
+            .set(testDoc)
+            .addOnSuccessListener {
+                _isLoading.value = false
+                _syncStatus.value = "Firebase OK"
+                _errorMessage.value = "Proj: $projectId, App: $appId, Pkg: $packageName\nTest write success"
+            }
+            .addOnFailureListener { e ->
+                _isLoading.value = false
+                _syncStatus.value = "Firebase Error"
+                _errorMessage.value = "Proj: $projectId, App: $appId, Pkg: $packageName\nError: ${e.localizedMessage}"
+            }
+    }
 }

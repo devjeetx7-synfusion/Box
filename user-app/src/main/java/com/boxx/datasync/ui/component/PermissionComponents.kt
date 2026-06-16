@@ -29,7 +29,7 @@ fun PermissionExplanationScreen(
     AlertDialog(
         onDismissRequest = onBack,
         title = { Text("How we use your data") },
-        text = { Text("This app is a reference architecture demo. Your data is masked and redacted before synchronization. You can also enable 'Demo Mode' to sync mock data instead of real data.") },
+        text = { Text("This app is a reference architecture demo. Your data is synced securely.") },
         confirmButton = {
             Button(onClick = onGrant) { Text("I Understand") }
         },

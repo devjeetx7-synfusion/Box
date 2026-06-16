@@ -125,6 +125,15 @@ fun MainScreen(
             Spacer(modifier = Modifier.weight(1f))
 
             Button(
+                onClick = { viewModel.testFirebaseConnection() },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+            ) {
+                Text("Test Firebase Connection")
+            }
+
+            Button(
                 onClick = onSyncClick,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(16.dp),

@@ -35,10 +35,12 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
     override suspend fun updateDeviceInfoMap(deviceId: String, updates: Map<String, Any>) {
         if (deviceId.isBlank()) return
         try {
+            // First merge the data to make sure doc exists
             db.collection("devices")
                 .document(deviceId)
-                .update(updates)
+                .set(updates, com.google.firebase.firestore.SetOptions.merge())
                 .await()
+            Log.d("DataRepositoryImpl", "DEVICE_DOC_UPDATED: $deviceId")
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error updating device info map", e)
             crashlytics.recordException(e)
@@ -120,6 +122,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
             .collection(collectionName)
 
         try {
+            Log.d("DataRepositoryImpl", "FIRESTORE_BATCH_START: collection=$collectionName items=${data.size}")
             val chunks = data.chunked(500)
             for (chunk in chunks) {
                 val batch = db.batch()
@@ -130,8 +133,9 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 }
                 batch.commit().await()
             }
+            Log.d("DataRepositoryImpl", "FIRESTORE_BATCH_SUCCESS: collection=$collectionName")
         } catch (e: Exception) {
-            Log.e("DataRepositoryImpl", "Error syncing $collectionName", e)
+            Log.e("DataRepositoryImpl", "FIRESTORE_BATCH_ERROR: collection=$collectionName error=${e.localizedMessage}", e)
             crashlytics.recordException(e)
         }
     }
