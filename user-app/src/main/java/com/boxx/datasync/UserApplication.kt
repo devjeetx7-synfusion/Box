@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.boxx.datasync.utils.DeviceIdHelper
+import com.boxx.datasync.utils.GlobalExceptionHandler
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.HiltAndroidApp
@@ -23,6 +24,7 @@ class UserApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        GlobalExceptionHandler.initialize(this)
         FirebaseApp.initializeApp(this)
 
         val crashlytics = FirebaseCrashlytics.getInstance()

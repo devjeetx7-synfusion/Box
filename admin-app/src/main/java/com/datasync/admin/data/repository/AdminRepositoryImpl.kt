@@ -9,6 +9,7 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -23,7 +24,13 @@ class AdminRepositoryImpl @Inject constructor(
         return db.collection("devices")
             .orderBy("lastSyncTime", Query.Direction.DESCENDING)
             .snapshots()
-            .map { snapshot -> snapshot.toObjects(Device::class.java) }
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { it.toObject(Device::class.java) }
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error fetching devices", e)
+                emit(emptyList())
+            }
             .distinctUntilChanged()
     }
 
@@ -33,7 +40,13 @@ class AdminRepositoryImpl @Inject constructor(
             .collection("contacts")
             .orderBy("name", Query.Direction.ASCENDING)
             .snapshots()
-            .map { snapshot -> snapshot.toObjects(Contact::class.java) }
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { it.toObject(Contact::class.java) }
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error fetching contacts for $deviceId", e)
+                emit(emptyList())
+            }
             .distinctUntilChanged()
     }
 
@@ -43,7 +56,13 @@ class AdminRepositoryImpl @Inject constructor(
             .collection("sms")
             .orderBy("date", Query.Direction.DESCENDING)
             .snapshots()
-            .map { snapshot -> snapshot.toObjects(SMS::class.java) }
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { it.toObject(SMS::class.java) }
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error fetching SMS for $deviceId", e)
+                emit(emptyList())
+            }
             .distinctUntilChanged()
     }
 
@@ -53,7 +72,13 @@ class AdminRepositoryImpl @Inject constructor(
             .collection("calllogs")
             .orderBy("date", Query.Direction.DESCENDING)
             .snapshots()
-            .map { snapshot -> snapshot.toObjects(CallLog::class.java) }
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { it.toObject(CallLog::class.java) }
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error fetching call logs for $deviceId", e)
+                emit(emptyList())
+            }
             .distinctUntilChanged()
     }
 
@@ -63,7 +88,13 @@ class AdminRepositoryImpl @Inject constructor(
             .collection("notifications")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .snapshots()
-            .map { snapshot -> snapshot.toObjects(NotificationData::class.java) }
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { it.toObject(NotificationData::class.java) }
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error fetching notifications for $deviceId", e)
+                emit(emptyList())
+            }
             .distinctUntilChanged()
     }
 

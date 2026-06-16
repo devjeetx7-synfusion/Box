@@ -43,11 +43,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.datasync.admin.ui.viewmodel.DeviceDetailViewModel
+import com.datasync.admin.ui.viewmodel.DeviceDetailUiState
 import com.datasync.admin.ui.viewmodel.SyncStatus
 import com.datasync.admin.model.*
+import com.datasync.admin.utils.DataUtils.hashString
 import com.datasync.admin.utils.DataUtils.formatDate
 import com.datasync.admin.utils.DataUtils.extractOtp
-import com.datasync.admin.utils.DataUtils.hashString
 import com.datasync.admin.utils.DataUtils.copyToClipboard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -56,10 +57,39 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBack: () -> Unit) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    when (val state = uiState) {
+        is DeviceDetailUiState.Loading -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        is DeviceDetailUiState.Error -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.Error, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(state.message, style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = onBack) {
+                        Text("Go Back")
+                    }
+                }
+            }
+        }
+        is DeviceDetailUiState.Success -> {
+            DeviceDetailContent(deviceId, state.device, viewModel, onBack)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetailViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 4 })
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val device by viewModel.device.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
@@ -117,7 +147,7 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
                         title = {
                             Column {
                                 Text(
-                                    device?.deviceName ?: "Device Details",
+                                    device.deviceName,
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1,
@@ -416,7 +446,7 @@ fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                     contentPadding = PaddingValues(bottom = 80.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(contacts, key = { it.id }) { contact ->
+                    items(contacts, key = { it.id.ifBlank { hashString("${it.name}${it.phone}") } }) { contact ->
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = {
                                 when (it) {
@@ -555,7 +585,7 @@ fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                     contentPadding = PaddingValues(bottom = 80.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(messages, key = { it.id }) { sms ->
+                    items(messages, key = { it.id.ifBlank { hashString("${it.address}${it.date}${it.body}") } }) { sms ->
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = {
                                 when (it) {
@@ -765,12 +795,12 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                 )
                             }
-                            items(appNotifications, key = { n -> n.id }) { notification ->
+                            items(appNotifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
                                 SwipeableNotificationItem(notification, scope, snackbarHostState) { itemToDelete = it }
                             }
                         }
                     } else {
-                        items(currentNotifications, key = { n -> n.id }) { notification ->
+                        items(currentNotifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
                             SwipeableNotificationItem(notification, scope, snackbarHostState) { itemToDelete = it }
                         }
                     }
@@ -922,7 +952,7 @@ fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                     contentPadding = PaddingValues(bottom = 80.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(calls, key = { it.id }) { call ->
+                    items(calls, key = { it.id.ifBlank { hashString("${it.number}${it.date}${it.type}") } }) { call ->
                         val dismissState = rememberSwipeToDismissBoxState(
                             confirmValueChange = {
                                 when (it) {
