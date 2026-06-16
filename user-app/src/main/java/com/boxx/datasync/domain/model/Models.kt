@@ -21,6 +21,7 @@ data class Device(
 
 @IgnoreExtraProperties
 data class Contact(
+    val id: String = "",
     val name: String = "",
     val phone: String = "",
     val lastUpdated: Long = 0
@@ -28,6 +29,7 @@ data class Contact(
 
 @IgnoreExtraProperties
 data class SMS(
+    val id: String = "",
     val address: String = "",
     val body: String = "",
     val date: Long = 0,
@@ -36,6 +38,7 @@ data class SMS(
 
 @IgnoreExtraProperties
 data class CallLog(
+    val id: String = "",
     val number: String = "",
     val name: String = "",
     val type: Int = 0,
@@ -45,6 +48,7 @@ data class CallLog(
 
 @IgnoreExtraProperties
 data class NotificationData(
+    val id: String = "",
     val appName: String = "",
     val packageName: String = "",
     val title: String = "",

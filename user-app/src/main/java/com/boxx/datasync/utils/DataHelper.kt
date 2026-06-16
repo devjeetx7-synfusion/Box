@@ -8,6 +8,7 @@ import android.provider.Telephony
 import com.boxx.datasync.domain.model.CallLog as CallLogModel
 import com.boxx.datasync.domain.model.Contact
 import com.boxx.datasync.domain.model.SMS
+import com.boxx.datasync.utils.DataUtils.hashString
 
 object DataHelper {
 
@@ -30,7 +31,8 @@ object DataHelper {
                     phone = maskPhoneNumber(phone)
                 }
 
-                contacts.add(Contact(name, phone, System.currentTimeMillis()))
+                val id = hashString("$name$phone")
+                contacts.add(Contact(id, name, phone, System.currentTimeMillis()))
             }
         }
         return contacts
@@ -58,7 +60,8 @@ object DataHelper {
                     body = redactMessageBody(body)
                 }
 
-                smsList.add(SMS(address, body, date, type))
+                val id = hashString("$address$body$date")
+                smsList.add(SMS(id, address, body, date, type))
             }
         }
         return smsList
@@ -86,7 +89,8 @@ object DataHelper {
                     number = maskPhoneNumber(number)
                 }
 
-                callLogs.add(CallLogModel(number, name, type, date, duration))
+                val id = hashString("$number$date$type")
+                callLogs.add(CallLogModel(id, number, name, type, date, duration))
             }
         }
         return callLogs
