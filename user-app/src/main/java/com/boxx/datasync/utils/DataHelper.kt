@@ -7,6 +7,7 @@ import android.provider.ContactsContract
 import android.provider.Telephony
 import com.boxx.datasync.domain.model.CallLog as CallLogModel
 import com.boxx.datasync.domain.model.Contact
+import com.boxx.datasync.domain.model.NotificationData
 import com.boxx.datasync.domain.model.SMS
 import com.boxx.datasync.utils.DataUtils.hashString
 
@@ -108,5 +109,12 @@ object DataHelper {
         val words = body.split(" ")
         if (words.size <= 2) return "[REDACTED]"
         return words.take(2).joinToString(" ") + "... [REDACTED]"
+    }
+
+    fun fetchNotifications(context: Context): List<NotificationData> {
+        // Since notifications are stored in Firestore as they arrive via NotificationListenerService,
+        // this method could return local state if cached, but for count purposes we might just use Firestore or a local DB.
+        // For now, returning empty to avoid crash if it's called from SyncService.
+        return emptyList()
     }
 }

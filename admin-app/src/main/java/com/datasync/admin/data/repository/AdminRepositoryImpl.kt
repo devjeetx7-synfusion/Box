@@ -102,10 +102,17 @@ class AdminRepositoryImpl @Inject constructor(
         try {
             db.collection("devices")
                 .document(deviceId)
-                .set(mapOf("syncRequestedAt" to System.currentTimeMillis()), SetOptions.merge())
+                .set(
+                    mapOf(
+                        "syncRequestedAt" to System.currentTimeMillis(),
+                        "syncStatus" to "Syncing Requested"
+                    ),
+                    SetOptions.merge()
+                )
                 .await()
         } catch (e: Exception) {
             Log.e("AdminRepositoryImpl", "Error requesting sync", e)
+            throw e
         }
     }
 

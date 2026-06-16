@@ -141,9 +141,6 @@ fun DashboardList(devices: List<Device>, onDeviceClick: (String) -> Unit) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(device.deviceName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
-                        if (device.isDemoMode) {
-                            SuggestionChip(onClick = {}, label = { Text("Demo") }, modifier = Modifier.height(24.dp))
-                        }
                     }
                     Text("${device.manufacturer} ${device.model} • ${device.deviceId.takeLast(6)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                     Spacer(modifier = Modifier.height(8.dp))

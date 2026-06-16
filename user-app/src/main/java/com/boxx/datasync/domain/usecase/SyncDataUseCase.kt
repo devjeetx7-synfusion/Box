@@ -12,8 +12,7 @@ class SyncDataUseCase @Inject constructor(
         deviceId: String,
         contacts: List<com.boxx.datasync.domain.model.Contact>,
         smsList: List<com.boxx.datasync.domain.model.SMS>,
-        callLogs: List<com.boxx.datasync.domain.model.CallLog>,
-        isDemoMode: Boolean
+        callLogs: List<com.boxx.datasync.domain.model.CallLog>
     ) {
         repository.syncContacts(deviceId, contacts)
         repository.syncSMS(deviceId, smsList)
@@ -27,8 +26,7 @@ class SyncDataUseCase @Inject constructor(
                 contactCount = contacts.size,
                 smsCount = smsList.size,
                 callLogCount = callLogs.size,
-                timestamp = System.currentTimeMillis(),
-                isDemoMode = isDemoMode
+                timestamp = System.currentTimeMillis()
             )
         )
     }

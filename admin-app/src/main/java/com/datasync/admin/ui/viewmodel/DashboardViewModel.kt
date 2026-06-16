@@ -1,5 +1,6 @@
 package com.datasync.admin.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.datasync.admin.data.local.SettingsManager
@@ -47,8 +48,9 @@ class DashboardViewModel @Inject constructor(
                 }
             }
             .catch { e ->
+                Log.e("DashboardViewModel", "Error loading devices", e)
                 _uiState.value = DashboardUiState.Error(
-                    message = "Failed to load devices",
+                    message = e.localizedMessage ?: "Failed to load devices",
                     trace = e.stackTraceToString()
                 )
             }
