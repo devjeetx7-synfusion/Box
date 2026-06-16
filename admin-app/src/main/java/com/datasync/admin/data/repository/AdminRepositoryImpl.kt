@@ -48,7 +48,7 @@ class AdminRepositoryImpl @Inject constructor(
                 device
             }
             .catch { e ->
-                Log.e("AdminRepositoryImpl", "ADMIN_LISTENER_ERROR: Error fetching device $deviceId", e)
+                Log.e("AdminRepositoryImpl", "DETAIL_LISTENER_ERROR: Error fetching device $deviceId", e)
                 emit(null)
             }
             .distinctUntilChanged()
