@@ -12,8 +12,9 @@ data class Device(
     val lastSyncTime: Long = 0,
     val contactCount: Int = 0,
     val smsCount: Int = 0,
-    val callLogCount: Int = 0,
+    val callCount: Int = 0,
     val notificationCount: Int = 0,
+    val heartbeatAt: Long = 0,
     val timestamp: Long = 0,
     val syncStatus: String = "Idle",
     val syncRequestedAt: Long = 0

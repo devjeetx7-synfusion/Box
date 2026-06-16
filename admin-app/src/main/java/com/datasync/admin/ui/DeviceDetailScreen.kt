@@ -48,6 +48,7 @@ import com.datasync.admin.ui.viewmodel.SyncStatus
 import com.datasync.admin.model.*
 import com.datasync.admin.utils.DataUtils.hashString
 import com.datasync.admin.utils.DataUtils.formatDate
+import com.datasync.admin.utils.DataUtils.formatTime12h
 import com.datasync.admin.utils.DataUtils.extractOtp
 import com.datasync.admin.utils.DataUtils.copyToClipboard
 import kotlinx.coroutines.CoroutineScope
@@ -67,13 +68,30 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
         }
         is DeviceDetailUiState.Error -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
                     Icon(Icons.Default.Error, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.error)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(state.message, style = MaterialTheme.typography.titleMedium)
+                    Text("Error", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.error)
+                    Text(state.message, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onBack) {
+                            Text("Go Back")
+                        }
+                        Button(onClick = { viewModel.requestSync() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Retry Sync")
+                        }
+                    }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = onBack) {
-                        Text("Go Back")
+                    val context = LocalContext.current
+                    TextButton(onClick = {
+                        copyToClipboard(context, "Device ID: $deviceId\nError: ${state.message}\nTime: ${System.currentTimeMillis()}")
+                    }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copy Debug Info")
                     }
                 }
             }
@@ -352,65 +370,98 @@ fun StickyHeader(device: Device?, syncStatus: SyncStatus, onSyncRequest: () -> U
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
         shape = RoundedCornerShape(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .padding(8.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val statusColor = when (syncStatus) {
-                        is SyncStatus.Syncing -> Color(0xFFFFA500)
-                        is SyncStatus.Success -> Color.Green
-                        is SyncStatus.Offline -> Color.Red
-                        is SyncStatus.Failed -> Color.Red
-                        else -> if (device?.isOnline == true) Color.Green else Color.Gray
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val isOnline = device?.isOnline == true
+                        val onlineColor = if (isOnline) Color(0xFF4CAF50) else Color.Gray
+                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(onlineColor))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isOnline) "Online" else "Offline",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = onlineColor,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    val statusText = when (syncStatus) {
-                        is SyncStatus.Syncing -> "Syncing..."
-                        is SyncStatus.Success -> "Synced"
-                        is SyncStatus.Offline -> "Offline"
-                        is SyncStatus.Failed -> "Failed"
-                        else -> if (device?.isOnline == true) "Online" else "Offline"
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(statusColor)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = statusText,
+                        "Last Online: ${formatTime12h(device?.heartbeatAt ?: 0)}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = statusColor,
-                        fontWeight = FontWeight.Bold
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text("${device?.manufacturer} ${device?.model} • ${formatDate(device?.lastSyncTime ?: 0)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-            }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     onClick = onSyncRequest,
                     enabled = syncStatus !is SyncStatus.Syncing,
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.height(28.dp),
-                    shape = RoundedCornerShape(6.dp)
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.height(32.dp),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     if (syncStatus is SyncStatus.Syncing) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     } else {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Sync", fontSize = 11.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Sync Now", fontSize = 12.sp)
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val syncColor = when (syncStatus) {
+                            is SyncStatus.Syncing -> Color(0xFFFFA500)
+                            is SyncStatus.Success -> Color(0xFF4CAF50)
+                            is SyncStatus.Failed -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.secondary
+                        }
+                        Text(
+                            text = when (syncStatus) {
+                                is SyncStatus.Syncing -> "Syncing..."
+                                is SyncStatus.Success -> "Synced Successfully"
+                                is SyncStatus.Failed -> "Sync Failed"
+                                else -> "Idle"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = syncColor,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Text(
+                        "Last Sync: ${formatTime12h(device?.lastSyncTime ?: 0)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CountItem("SMS", device?.smsCount ?: 0)
+                    CountItem("Calls", device?.callCount ?: 0)
+                    CountItem("Contacts", device?.contactCount ?: 0)
                 }
             }
         }
+    }
+}
+
+@Composable
+fun CountItem(label: String, count: Int) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(count.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
     }
 }
 

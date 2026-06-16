@@ -53,9 +53,9 @@ class DeviceDetailViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            kotlinx.coroutines.delay(15000)
+            kotlinx.coroutines.delay(20000)
             if (_uiState.value is DeviceDetailUiState.Loading) {
-                _uiState.value = DeviceDetailUiState.Error("Loading timeout. Device might be offline or deleted.")
+                _uiState.value = DeviceDetailUiState.Error("Device Detail loading timeout. Make sure the client app is running.")
             }
         }
     }
@@ -121,16 +121,14 @@ class DeviceDetailViewModel @Inject constructor(
     val device: StateFlow<Device?> = if (deviceId.isBlank()) {
         MutableStateFlow<Device?>(null).asStateFlow()
     } else {
-        repository.getDevices()
-            .map { devices -> devices.find { it.deviceId == deviceId } }
-            .distinctUntilChanged()
+        repository.getDevice(deviceId)
             .onEach { device ->
                 if (device != null) {
                     val now = System.currentTimeMillis()
                     _syncStatus.value = when {
-                        device.syncRequestedAt > device.lastSyncTime && (now - device.syncRequestedAt) < 30000 -> SyncStatus.Syncing
-                        now - device.lastSyncTime < 60000 -> SyncStatus.Success
-                        now - device.lastSyncTime > 5 * 60000 -> SyncStatus.Offline
+                        device.syncRequestedAt > device.lastSyncTime && (now - device.syncRequestedAt) < 60000 -> SyncStatus.Syncing
+                        device.syncStatus.startsWith("Error") -> SyncStatus.Failed
+                        device.syncStatus == "Synced" -> SyncStatus.Success
                         else -> SyncStatus.Idle
                     }
                     _uiState.value = DeviceDetailUiState.Success(device)

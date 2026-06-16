@@ -4,6 +4,7 @@ import android.util.Log
 import com.boxx.datasync.domain.model.*
 import com.boxx.datasync.domain.repository.DataRepository
 import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.flow.Flow
@@ -27,6 +28,19 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 .await()
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error updating device info", e)
+            crashlytics.recordException(e)
+        }
+    }
+
+    override suspend fun updateDeviceInfoMap(deviceId: String, updates: Map<String, Any>) {
+        if (deviceId.isBlank()) return
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .update(updates)
+                .await()
+        } catch (e: Exception) {
+            Log.e("DataRepositoryImpl", "Error updating device info map", e)
             crashlytics.recordException(e)
         }
     }
@@ -84,7 +98,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 mapOf(
                     "contactCount" to 0,
                     "smsCount" to 0,
-                    "callLogCount" to 0,
+                    "callCount" to 0,
                     "notificationCount" to 0
                 )
             ).await()
@@ -153,5 +167,34 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 Log.e("DataRepositoryImpl", "Error observing sync requests", e)
                 emit(0L)
             }
+    }
+
+    override suspend fun incrementNotificationCount(deviceId: String) {
+        if (deviceId.isBlank()) return
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .update("notificationCount", FieldValue.increment(1))
+                .await()
+        } catch (e: Exception) {
+            Log.e("DataRepositoryImpl", "Error incrementing notification count", e)
+        }
+    }
+
+    override suspend fun updateHeartbeat(deviceId: String) {
+        if (deviceId.isBlank()) return
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .update(
+                    mapOf(
+                        "heartbeatAt" to System.currentTimeMillis(),
+                        "syncStatus" to "Online"
+                    )
+                )
+                .await()
+        } catch (e: Exception) {
+            Log.e("DataRepositoryImpl", "Error updating heartbeat", e)
+        }
     }
 }

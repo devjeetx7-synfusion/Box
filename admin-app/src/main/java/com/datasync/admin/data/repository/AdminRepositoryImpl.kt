@@ -22,7 +22,7 @@ class AdminRepositoryImpl @Inject constructor(
 
     override fun getDevices(): Flow<List<Device>> {
         return db.collection("devices")
-            .orderBy("lastSyncTime", Query.Direction.DESCENDING)
+            .orderBy("heartbeatAt", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull { it.toObject(Device::class.java) }
@@ -30,6 +30,20 @@ class AdminRepositoryImpl @Inject constructor(
             .catch { e ->
                 Log.e("AdminRepositoryImpl", "Error fetching devices", e)
                 emit(emptyList())
+            }
+            .distinctUntilChanged()
+    }
+
+    override fun getDevice(deviceId: String): Flow<Device?> {
+        return db.collection("devices")
+            .document(deviceId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObject(Device::class.java)
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error fetching device $deviceId", e)
+                emit(null)
             }
             .distinctUntilChanged()
     }

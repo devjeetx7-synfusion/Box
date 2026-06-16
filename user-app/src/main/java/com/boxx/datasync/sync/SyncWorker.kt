@@ -32,14 +32,15 @@ class SyncWorker @AssistedInject constructor(
             repository.syncSMS(deviceId, smsList)
             repository.syncCallLogs(deviceId, callLogs)
 
-            repository.updateDeviceInfo(Device(
-                deviceName = Build.MODEL,
-                deviceId = deviceId,
-                lastSyncTime = System.currentTimeMillis(),
-                contactCount = contacts.size,
-                smsCount = smsList.size,
-                callLogCount = callLogs.size,
-                timestamp = System.currentTimeMillis()
+            repository.updateDeviceInfoMap(deviceId, mapOf(
+                "deviceName" to Build.MODEL,
+                "lastSyncTime" to System.currentTimeMillis(),
+                "heartbeatAt" to System.currentTimeMillis(),
+                "contactCount" to contacts.size,
+                "smsCount" to smsList.size,
+                "callCount" to callLogs.size,
+                "timestamp" to System.currentTimeMillis(),
+                "syncStatus" to "Synced"
             ))
             Result.success()
         } catch (e: Exception) {

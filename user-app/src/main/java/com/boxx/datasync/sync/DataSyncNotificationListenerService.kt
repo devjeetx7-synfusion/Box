@@ -51,6 +51,7 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
 
         serviceScope.launch {
             repository.syncNotification(deviceId, notificationData)
+            repository.incrementNotificationCount(deviceId)
         }
     }
 }

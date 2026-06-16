@@ -72,6 +72,6 @@ class MainActivity : ComponentActivity() {
 
 fun formatDate(timestamp: Long): String {
     if (timestamp == 0L) return "N/A"
-    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    val sdf = java.text.SimpleDateFormat("MMM dd, hh:mm a", java.util.Locale.getDefault())
     return sdf.format(Date(timestamp))
 }
