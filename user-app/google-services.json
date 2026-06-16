@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "307167081129",
+    "project_id": "boxxx-40178",
+    "storage_bucket": "boxxx-40178.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:307167081129:android:b31c56d848b510f5356fb8",
+        "android_client_info": {
+          "package_name": "com.boxx.datasync"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4NpYgTddibRcHJ_EvzaJlfjbO1L2AYs0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:307167081129:android:7c75a906bdcf6266356fb8",
+        "android_client_info": {
+          "package_name": "com.datasync.admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB4NpYgTddibRcHJ_EvzaJlfjbO1L2AYs0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
