@@ -27,7 +27,7 @@ class DeviceDetailViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        Log.e("DeviceDetailViewModel", "Background error", throwable)
+        Log.e("DeviceDetailViewModel", "DETAIL_LISTENER_ERROR: Background error", throwable)
         _syncStatus.value = SyncStatus.Failed
     }
 
@@ -53,6 +53,7 @@ class DeviceDetailViewModel @Inject constructor(
 
     init {
         Log.d("DeviceDetailViewModel", "DETAIL_LISTENER_STARTED: deviceId=$deviceId")
+        Log.d("DeviceDetailViewModel", "DETAIL_FIRESTORE_PATH: devices/$deviceId")
     }
 
     val themeMode = settingsManager.themeMode.stateIn(
@@ -119,6 +120,7 @@ class DeviceDetailViewModel @Inject constructor(
         repository.getDevice(deviceId)
             .onEach { device ->
                 if (device != null) {
+                    Log.d("DeviceDetailViewModel", "DETAIL_DEVICE_DOC_FOUND: $deviceId")
                     val now = System.currentTimeMillis()
                     _syncStatus.value = when {
                         device.syncRequestedAt > device.lastSyncTime && (now - device.syncRequestedAt) < 60000 -> SyncStatus.Syncing
@@ -128,7 +130,11 @@ class DeviceDetailViewModel @Inject constructor(
                     }
                     _uiState.value = DeviceDetailUiState.Success(device)
                 } else {
-                    _uiState.value = DeviceDetailUiState.Error("Device not found")
+                    Log.d("DeviceDetailViewModel", "DETAIL_DEVICE_DOC_MISSING: $deviceId")
+                    // If device doesn't exist but we navigated here, there might be a latency or data hasn't fully uploaded.
+                    // Instead of blocking with "Error" which stops UI from rendering subcollections,
+                    // we construct a dummy empty device so tabs can still render their empty states.
+                    _uiState.value = DeviceDetailUiState.Success(Device(deviceId = deviceId, deviceName = "Unknown Device"))
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -138,7 +144,7 @@ class DeviceDetailViewModel @Inject constructor(
         MutableStateFlow(emptyList<Contact>()).asStateFlow()
     } else {
         combine(
-            repository.getContacts(deviceId),
+            repository.getContacts(deviceId).onEach { Log.d("DeviceDetailViewModel", "DETAIL_CONTACTS_COUNT: ${it.size}") },
             _searchQuery
         ) { contacts, query ->
             contacts.filter { it.name.contains(query, true) || it.phone.contains(query) }
@@ -149,7 +155,7 @@ class DeviceDetailViewModel @Inject constructor(
         MutableStateFlow(emptyList<SMS>()).asStateFlow()
     } else {
         combine(
-            repository.getSMS(deviceId),
+            repository.getSMS(deviceId).onEach { Log.d("DeviceDetailViewModel", "DETAIL_SMS_COUNT: ${it.size}") },
             _searchQuery,
             _smsFilter
         ) { sms, query, filter ->
@@ -164,7 +170,7 @@ class DeviceDetailViewModel @Inject constructor(
         MutableStateFlow(emptyList<CallLog>()).asStateFlow()
     } else {
         combine(
-            repository.getCallLogs(deviceId),
+            repository.getCallLogs(deviceId).onEach { Log.d("DeviceDetailViewModel", "DETAIL_CALLLOGS_COUNT: ${it.size}") },
             _searchQuery,
             _callFilter
         ) { calls, query, filter ->
@@ -179,7 +185,7 @@ class DeviceDetailViewModel @Inject constructor(
         MutableStateFlow(emptyList<NotificationData>()).asStateFlow()
     } else {
         combine(
-            repository.getNotifications(deviceId),
+            repository.getNotifications(deviceId).onEach { Log.d("DeviceDetailViewModel", "DETAIL_NOTIFICATIONS_COUNT: ${it.size}") },
             _searchQuery,
             _selectedApp
         ) { notifications, query, app ->
