@@ -30,7 +30,7 @@ fun MainScreen(
     val syncStatus by viewModel.syncStatus.collectAsState()
     val lastSyncTime by viewModel.lastSyncTime.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
-    val isDemoMode by viewModel.isDemoMode.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -97,10 +97,20 @@ fun MainScreen(
             }
 
             Text(
-                text = if (isDemoMode) "$syncStatus (Demo)" else syncStatus,
+                text = syncStatus,
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = if (syncStatus == "Error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground
             )
+
+            errorMessage?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -109,23 +119,6 @@ fun MainScreen(
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     InfoRow(label = "Device ID", value = deviceId)
                     InfoRow(label = "Last Synced", value = lastSyncTime)
-
-                    HorizontalDivider()
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Enable Demo Sync", fontWeight = FontWeight.Bold)
-                            Text("Sync synthetic mock data", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Switch(
-                            checked = isDemoMode,
-                            onCheckedChange = { viewModel.toggleDemoMode(it) }
-                        )
-                    }
                 }
             }
 

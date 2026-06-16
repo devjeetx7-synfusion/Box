@@ -36,6 +36,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val initialPermissions = mutableListOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_SMS,
+            Manifest.permission.READ_CALL_LOG
+        ).toTypedArray()
+
+        if (hasPermissions(this, initialPermissions)) {
+            startSyncService(this)
+        }
+
         setContent {
             MaterialTheme(
                 colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
@@ -80,7 +91,7 @@ class MainActivity : ComponentActivity() {
                         onSyncClick = {
                             viewModel.setSyncing()
                             startSyncService(context)
-                            if (!viewModel.isDemoMode.value && !hasPermissions(context, requiredPermissions)) {
+                            if (!hasPermissions(context, requiredPermissions)) {
                                 showRationale = true
                             }
                         },

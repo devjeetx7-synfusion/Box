@@ -15,7 +15,7 @@ data class Device(
     val callLogCount: Int = 0,
     val notificationCount: Int = 0,
     val timestamp: Long = 0,
-    val isDemoMode: Boolean = false,
+    val syncStatus: String = "Idle",
     val syncRequestedAt: Long = 0
 ) {
     val isOnline: Boolean
