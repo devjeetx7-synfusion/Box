@@ -172,4 +172,17 @@ class MainActivity : ComponentActivity() {
             context.startService(intent)
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Ensure heartbeat fires when app comes to foreground
+        val requiredPermissions = mutableListOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_SMS,
+            Manifest.permission.READ_CALL_LOG
+        ).toTypedArray()
+        if (hasPermissions(this, requiredPermissions)) {
+            startSyncService(this)
+        }
+    }
 }

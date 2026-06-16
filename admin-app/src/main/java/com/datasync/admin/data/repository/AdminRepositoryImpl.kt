@@ -21,6 +21,7 @@ class AdminRepositoryImpl @Inject constructor(
 ) : AdminRepository {
 
     override fun getDevices(): Flow<List<Device>> {
+        Log.d("AdminRepositoryImpl", "ADMIN_LISTENER_STARTED: devices")
         return db.collection("devices")
             .orderBy("heartbeatAt", Query.Direction.DESCENDING)
             .snapshots()
@@ -28,21 +29,26 @@ class AdminRepositoryImpl @Inject constructor(
                 snapshot.documents.mapNotNull { it.toObject(Device::class.java) }
             }
             .catch { e ->
-                Log.e("AdminRepositoryImpl", "Error fetching devices", e)
+                Log.e("AdminRepositoryImpl", "ADMIN_LISTENER_ERROR: Error fetching devices", e)
                 emit(emptyList())
             }
             .distinctUntilChanged()
     }
 
     override fun getDevice(deviceId: String): Flow<Device?> {
+        Log.d("AdminRepositoryImpl", "ADMIN_LISTENER_STARTED: getDevice $deviceId")
         return db.collection("devices")
             .document(deviceId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObject(Device::class.java)
+                val device = snapshot.toObject(Device::class.java)
+                if (device != null) {
+                    Log.d("AdminRepositoryImpl", "ADMIN_DEVICE_FOUND: $deviceId")
+                }
+                device
             }
             .catch { e ->
-                Log.e("AdminRepositoryImpl", "Error fetching device $deviceId", e)
+                Log.e("AdminRepositoryImpl", "ADMIN_LISTENER_ERROR: Error fetching device $deviceId", e)
                 emit(null)
             }
             .distinctUntilChanged()

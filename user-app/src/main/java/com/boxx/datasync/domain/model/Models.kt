@@ -17,7 +17,9 @@ data class Device(
     val heartbeatAt: Long = 0,
     val timestamp: Long = 0,
     val syncStatus: String = "Idle",
-    val syncRequestedAt: Long = 0
+    val syncRequestedAt: Long = 0,
+    val presenceStatus: String = "Offline",
+    val lastError: String = ""
 )
 
 @IgnoreExtraProperties

@@ -52,12 +52,7 @@ class DeviceDetailViewModel @Inject constructor(
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(20000)
-            if (_uiState.value is DeviceDetailUiState.Loading) {
-                _uiState.value = DeviceDetailUiState.Error("Device Detail loading timeout. Make sure the client app is running.")
-            }
-        }
+        Log.d("DeviceDetailViewModel", "DETAIL_LISTENER_STARTED: deviceId=$deviceId")
     }
 
     val themeMode = settingsManager.themeMode.stateIn(

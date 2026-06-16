@@ -74,6 +74,13 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Retry")
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { viewModel.testFirebaseConnection() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                            ) {
+                                Text("Test Firebase Connection")
+                            }
                         }
                     }
                 }
@@ -96,6 +103,13 @@ fun DashboardScreen(
                                         Text("Copy Trace")
                                     }
                                 }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { viewModel.testFirebaseConnection() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                            ) {
+                                Text("Test Firebase Connection")
                             }
                         }
                     }
