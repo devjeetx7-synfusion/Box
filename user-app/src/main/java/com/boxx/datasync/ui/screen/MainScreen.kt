@@ -104,12 +104,35 @@ fun MainScreen(
             )
 
             errorMessage?.let { error ->
-                Text(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = {
+                            val debugInfo = """
+                                Device ID: $deviceId
+                                Sync Status: $syncStatus
+                                Error: $error
+                                Last Synced: $lastSyncTime
+                                Manufacturer: ${android.os.Build.MANUFACTURER}
+                                Model: ${android.os.Build.MODEL}
+                                OS: ${android.os.Build.VERSION.RELEASE}
+                            """.trimIndent()
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("Sync Debug Info", debugInfo)
+                            clipboard.setPrimaryClip(clip)
+                        }
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copy Debug Info")
+                    }
+                }
             }
 
             Card(

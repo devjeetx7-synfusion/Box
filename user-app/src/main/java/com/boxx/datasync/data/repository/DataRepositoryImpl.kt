@@ -159,6 +159,61 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         if (callLogs.isNotEmpty()) syncCallLogs(deviceId, callLogs)
     }
 
+    override suspend fun performSync(
+        deviceId: String,
+        contacts: List<Contact>,
+        smsList: List<SMS>,
+        callLogs: List<CallLog>,
+        simState: Map<String, Any>,
+        isFullSync: Boolean,
+        lastHandledSyncRequest: Long
+    ) {
+        if (deviceId.isBlank()) return
+        val currentTime = System.currentTimeMillis()
+
+        try {
+            // 1. Sync data
+            syncIncremental(deviceId, contacts, smsList, callLogs)
+
+            // 2. Fetch total counts (best effort)
+            // Note: Since we don't have access to context here to call DataHelper,
+            // we rely on the caller passing the correct counts or we just use the synced counts for now.
+            // However, the prompt asks to update counts after every sync.
+
+            val updateMap = mutableMapOf<String, Any>(
+                "deviceId" to deviceId,
+                "deviceName" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                "manufacturer" to android.os.Build.MANUFACTURER,
+                "model" to android.os.Build.MODEL,
+                "osVersion" to android.os.Build.VERSION.RELEASE,
+                "lastSyncTime" to currentTime,
+                "heartbeatAt" to currentTime,
+                "timestamp" to currentTime,
+                "syncStatus" to "Synced",
+                "presenceStatus" to "Online",
+                "lastError" to "",
+                "syncRequestedAt" to lastHandledSyncRequest
+            )
+            updateMap.putAll(simState)
+
+            // Update counts from simState if provided by caller
+            if (simState.containsKey("contactCount")) updateMap["contactCount"] = simState["contactCount"]!!
+            if (simState.containsKey("smsCount")) updateMap["smsCount"] = simState["smsCount"]!!
+            if (simState.containsKey("callCount")) updateMap["callCount"] = simState["callCount"]!!
+
+            updateDeviceInfoMap(deviceId, updateMap)
+            Log.d("Sync", "CLIENT_SYNC_SUCCESS")
+        } catch (e: Exception) {
+            Log.e("Sync", "CLIENT_SYNC_FAILED", e)
+            updateDeviceInfoMap(deviceId, mapOf(
+                "lastSyncTime" to currentTime,
+                "heartbeatAt" to currentTime,
+                "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}"
+            ))
+            throw e
+        }
+    }
+
     override fun observeSyncRequests(deviceId: String): Flow<Long> {
         if (deviceId.isBlank()) return kotlinx.coroutines.flow.flowOf(0L)
         return db.collection("devices")

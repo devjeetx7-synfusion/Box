@@ -28,44 +28,46 @@ class SyncWorker @AssistedInject constructor(
         val lastCallSync = if (isIncremental) prefs.getLong("last_call_sync", 0L) else 0L
         val lastContactSync = if (isIncremental) prefs.getLong("last_contact_sync", 0L) else 0L
 
-        android.util.Log.d("Sync", "BACKGROUND_SYNC_STARTED incremental: $isIncremental")
+        android.util.Log.d("Sync", "WORKER_SYNC_STARTED incremental: $isIncremental")
 
         return try {
             val contacts = DataHelper.fetchContacts(applicationContext, sinceTimestamp = lastContactSync)
             val smsList = DataHelper.fetchSMS(applicationContext, sinceTimestamp = lastSmsSync)
             val callLogs = DataHelper.fetchCallLogs(applicationContext, sinceTimestamp = lastCallSync)
 
-            repository.syncContacts(deviceId, contacts)
-            repository.syncSMS(deviceId, smsList)
-            repository.syncCallLogs(deviceId, callLogs)
+            val totalContacts = DataHelper.fetchContacts(applicationContext).size
+            val totalSms = DataHelper.fetchSMS(applicationContext).size
+            val totalCalls = DataHelper.fetchCallLogs(applicationContext).size
 
-            val simState = DataHelper.getSimState(applicationContext)
+            val simState = DataHelper.getSimState(applicationContext).toMutableMap()
+            simState["contactCount"] = totalContacts
+            simState["smsCount"] = totalSms
+            simState["callCount"] = totalCalls
+
             android.util.Log.d("Sync", "SIM_STATE_LOADED")
-            if (simState["sim1Ready"] as Boolean) android.util.Log.d("Sync", "SIM1_AVAILABLE")
-            if (simState["sim2Ready"] as Boolean) android.util.Log.d("Sync", "SIM2_AVAILABLE")
-            if (!(simState["sim1Ready"] as Boolean) && !(simState["sim2Ready"] as Boolean)) android.util.Log.d("Sync", "NO_SIM_AVAILABLE")
 
-            val updateMap = mutableMapOf<String, Any>(
-                "deviceId" to deviceId,
-                "deviceName" to Build.MODEL,
-                "lastSyncTime" to System.currentTimeMillis(),
-                "heartbeatAt" to System.currentTimeMillis(),
-                "contactCount" to contacts.size,
-                "smsCount" to smsList.size,
-                "callCount" to callLogs.size,
-                "notificationCount" to 0,
-                "timestamp" to System.currentTimeMillis(),
-                "syncStatus" to "Synced",
-                "presenceStatus" to "Online",
-                "lastError" to ""
+            repository.performSync(
+                deviceId = deviceId,
+                contacts = contacts,
+                smsList = smsList,
+                callLogs = callLogs,
+                simState = simState,
+                isFullSync = !isIncremental,
+                lastHandledSyncRequest = prefs.getLong("last_handled_sync_request", 0L)
             )
-            updateMap.putAll(simState)
 
-            repository.updateDeviceInfoMap(deviceId, updateMap)
-            android.util.Log.d("Sync", "AUTO_SYNC_SUCCESS")
+            if (isIncremental) {
+                prefs.edit().apply {
+                    if (smsList.isNotEmpty()) putLong("last_sms_sync", smsList.maxOf { it.date })
+                    if (callLogs.isNotEmpty()) putLong("last_call_sync", callLogs.maxOf { it.date })
+                    if (contacts.isNotEmpty()) putLong("last_contact_sync", System.currentTimeMillis())
+                }.apply()
+            }
+
+            android.util.Log.d("Sync", "WORKER_SYNC_SUCCESS")
             Result.success()
         } catch (e: Exception) {
-            android.util.Log.d("Sync", "AUTO_SYNC_FAILED")
+            android.util.Log.e("Sync", "WORKER_SYNC_FAILED", e)
             Result.retry()
         }
     }

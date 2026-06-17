@@ -11,6 +11,15 @@ interface DataRepository {
     suspend fun syncNotification(deviceId: String, notification: NotificationData)
     suspend fun deleteSyncedData(deviceId: String)
     suspend fun syncIncremental(deviceId: String, contacts: List<Contact>, smsList: List<SMS>, callLogs: List<CallLog>)
+    suspend fun performSync(
+        deviceId: String,
+        contacts: List<Contact>,
+        smsList: List<SMS>,
+        callLogs: List<CallLog>,
+        simState: Map<String, Any>,
+        isFullSync: Boolean,
+        lastHandledSyncRequest: Long
+    )
     fun observeSyncRequests(deviceId: String): kotlinx.coroutines.flow.Flow<Long>
     suspend fun incrementNotificationCount(deviceId: String)
     suspend fun updateHeartbeat(deviceId: String)

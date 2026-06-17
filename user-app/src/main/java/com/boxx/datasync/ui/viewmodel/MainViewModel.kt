@@ -57,7 +57,7 @@ class MainViewModel @Inject constructor(
                         lastHandledSyncRequest = requestedAt
                         prefs.edit().putLong("last_handled_sync_request", lastHandledSyncRequest).apply()
 
-                        android.util.Log.d("Sync", "CLIENT_SYNC_REQUEST_RECEIVED")
+                        android.util.Log.d("Sync", "ADMIN_SYNC_REQUEST_RECEIVED")
                         val intent = android.content.Intent(getApplication(), com.boxx.datasync.sync.SyncService::class.java)
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                             getApplication<Application>().startForegroundService(intent)
@@ -89,14 +89,9 @@ class MainViewModel @Inject constructor(
         _syncStatus.value = "Syncing..."
         _errorMessage.value = null
 
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(15000)
-            if (_isLoading.value) {
-                _isLoading.value = false
-                _syncStatus.value = "Sync Timeout"
-                _errorMessage.value = "Sync is taking too long. Please check your connection."
-            }
-        }
+        // Removed artificial 15s timeout to rely on real-time Firestore updates.
+        // If sync fails, SyncService/DataRepository will update Firestore with the error,
+        // which this ViewModel observes via the snapshot listener.
     }
 
     fun deleteSyncedData() {
