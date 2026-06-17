@@ -57,9 +57,15 @@ class SyncService : Service() {
         serviceScope.launch {
             try {
                 performSync(isFullSync = true)
+            } catch (e: Exception) {
+                Log.e("SyncService", "Sync failed in service", e)
             } finally {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    stopForeground(true)
+                }
+                stopSelf(startId)
             }
         }
         return START_NOT_STICKY
@@ -98,9 +104,9 @@ class SyncService : Service() {
                 DataHelper.fetchCallLogs(this@SyncService, sinceTimestamp = lastCallSync)
             } else emptyList()
 
-            val totalContacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this@SyncService).size else 0
-            val totalSms = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this@SyncService).size else 0
-            val totalCalls = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this@SyncService).size else 0
+            val totalContacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this@SyncService, sinceTimestamp = 0).size else 0
+            val totalSms = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this@SyncService, sinceTimestamp = 0).size else 0
+            val totalCalls = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this@SyncService, sinceTimestamp = 0).size else 0
 
             val simState = DataHelper.getSimState(this@SyncService).toMutableMap()
             simState["contactCount"] = totalContacts

@@ -174,7 +174,7 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    deviceId,
+                                    deviceId.takeLast(8).uppercase(),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

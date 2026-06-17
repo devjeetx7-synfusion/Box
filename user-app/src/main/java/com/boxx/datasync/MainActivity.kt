@@ -48,10 +48,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val deviceId = com.boxx.datasync.utils.DeviceIdHelper.getDeviceId(this)
         lifecycleScope.launch {
+            if (deviceId.isNotBlank()) {
+                repository.updateHeartbeat(deviceId)
+            }
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 while (isActive) {
-                    val deviceId = com.boxx.datasync.utils.DeviceIdHelper.getDeviceId(this@MainActivity)
                     if (deviceId.isNotBlank()) {
                         repository.updateHeartbeat(deviceId)
                     }
