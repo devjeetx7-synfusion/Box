@@ -54,11 +54,13 @@ class SyncService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val isFullSync = intent?.getBooleanExtra("EXTRA_FULL_SYNC", false) ?: false
+
         serviceScope.launch {
             try {
-                performSync(isFullSync = true)
+                performSync(isFullSync = isFullSync)
             } catch (e: Exception) {
-                Log.e("SyncService", "Sync failed in service", e)
+                Log.e("SyncService", "SYNC_SERVICE_FAILED", e)
             } finally {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -72,7 +74,7 @@ class SyncService : Service() {
     }
 
     private suspend fun performSync(isFullSync: Boolean = false) {
-        Log.d("SyncService", "FOREGROUND_SERVICE_STARTED")
+        Log.d("SyncService", "SYNC_SERVICE_STARTED (Full=$isFullSync)")
 
         repository.updateDeviceInfoMap(deviceId, mapOf("syncStatus" to "Syncing..."))
 
@@ -82,8 +84,13 @@ class SyncService : Service() {
         if (!hasPermission(android.Manifest.permission.READ_CONTACTS) &&
             !hasPermission(android.Manifest.permission.READ_SMS) &&
             !hasPermission(android.Manifest.permission.READ_CALL_LOG)) {
-            Log.d("SyncService", "PERMISSIONS_STATUS: Not granted")
-            repository.updateDeviceInfoMap(deviceId, mapOf("syncStatus" to "Error: Permissions not granted"))
+            Log.e("SyncService", "SYNC_SERVICE_FAILED: Permissions not granted")
+            repository.updateDeviceInfoMap(deviceId, mapOf(
+                "syncStatus" to "Error: Permissions not granted",
+                "lastError" to "Required permissions (Contacts/SMS/Calls) missing",
+                "heartbeatAt" to currentTime,
+                "presenceStatus" to "Online"
+            ))
             return
         }
 
@@ -131,12 +138,14 @@ class SyncService : Service() {
                 if (contacts.isNotEmpty()) putLong("last_contact_sync", currentTime)
             }.apply()
 
-            Log.d("SyncService", "FOREGROUND_SERVICE_SUCCESS")
+            Log.d("SyncService", "SYNC_SERVICE_SUCCESS")
         } catch (e: Exception) {
-            Log.e("SyncService", "FOREGROUND_SERVICE_FAILED", e)
+            Log.e("SyncService", "SYNC_SERVICE_FAILED", e)
             repository.updateDeviceInfoMap(deviceId, mapOf(
                 "syncStatus" to "Error: ${e.localizedMessage}",
-                "lastError" to (e.localizedMessage ?: "Unknown error")
+                "lastError" to (e.localizedMessage ?: "Unknown error"),
+                "heartbeatAt" to currentTime,
+                "presenceStatus" to "Online"
             ))
             crashlytics.recordException(e)
         }

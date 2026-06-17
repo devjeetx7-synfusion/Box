@@ -28,6 +28,19 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
         deviceId = DeviceIdHelper.getDeviceId(this)
     }
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        android.util.Log.d("NotificationService", "NOTIFICATION_LISTENER_CONNECTED")
+        serviceScope.launch {
+            repository.updateHeartbeat(deviceId)
+        }
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        android.util.Log.d("NotificationService", "NOTIFICATION_LISTENER_DISCONNECTED")
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName
 

@@ -39,7 +39,7 @@ class SyncWorker @AssistedInject constructor(
                 android.util.Log.e("Sync", "WORKER_SYNC_FAILED: Missing permissions")
                 repository.updateDeviceInfoMap(deviceId, mapOf(
                     "syncStatus" to "Error: Permissions not granted",
-                    "lastError" to "Missing required permissions",
+                    "lastError" to "Required permissions (Contacts/SMS/Calls) missing",
                     "heartbeatAt" to System.currentTimeMillis(),
                     "presenceStatus" to "Online"
                 ))

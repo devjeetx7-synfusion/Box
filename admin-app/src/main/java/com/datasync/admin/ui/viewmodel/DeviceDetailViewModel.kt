@@ -90,13 +90,6 @@ class DeviceDetailViewModel @Inject constructor(
                     }
                 }
         }
-
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(15000)
-            if (_uiState.value is DeviceDetailUiState.Loading) {
-                _uiState.value = DeviceDetailUiState.Error("Timeout loading device. No data received.")
-            }
-        }
     }
 
     val themeMode = settingsManager.themeMode.stateIn(

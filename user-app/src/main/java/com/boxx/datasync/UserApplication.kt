@@ -39,6 +39,10 @@ class UserApplication : Application(), Configuration.Provider {
         observeSyncRequests()
     }
 
+    fun isPermissionGranted(permission: String): Boolean {
+        return androidx.core.content.ContextCompat.checkSelfPermission(this, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
     private fun observeSyncRequests() {
         val deviceId = DeviceIdHelper.getDeviceId(this)
         if (deviceId.isBlank()) return
@@ -78,15 +82,20 @@ class UserApplication : Application(), Configuration.Provider {
             dataContentObserver = com.boxx.datasync.sync.DataContentObserver(this, handler)
         }
 
+        val observer = dataContentObserver ?: return
+
         try {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                contentResolver.registerContentObserver(android.provider.ContactsContract.Contacts.CONTENT_URI, true, dataContentObserver!!)
+            // Unregister before registering to avoid duplicates
+            contentResolver.unregisterContentObserver(observer)
+
+            if (isPermissionGranted(android.Manifest.permission.READ_CONTACTS)) {
+                contentResolver.registerContentObserver(android.provider.ContactsContract.Contacts.CONTENT_URI, true, observer)
             }
-            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                contentResolver.registerContentObserver(android.provider.Telephony.Sms.CONTENT_URI, true, dataContentObserver!!)
+            if (isPermissionGranted(android.Manifest.permission.READ_SMS)) {
+                contentResolver.registerContentObserver(android.provider.Telephony.Sms.CONTENT_URI, true, observer)
             }
-            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALL_LOG) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                contentResolver.registerContentObserver(android.provider.CallLog.Calls.CONTENT_URI, true, dataContentObserver!!)
+            if (isPermissionGranted(android.Manifest.permission.READ_CALL_LOG)) {
+                contentResolver.registerContentObserver(android.provider.CallLog.Calls.CONTENT_URI, true, observer)
             }
         } catch (e: Exception) {
             android.util.Log.e("UserApplication", "Failed to register ContentObserver", e)
