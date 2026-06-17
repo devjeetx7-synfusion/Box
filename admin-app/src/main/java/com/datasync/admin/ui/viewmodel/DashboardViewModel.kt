@@ -47,6 +47,7 @@ class DashboardViewModel @Inject constructor(
                     _uiState.value = DashboardUiState.Empty
                 } else {
                     _uiState.value = DashboardUiState.Success(devices)
+                    android.util.Log.d("Presence", "ADMIN_PRESENCE_UPDATED")
                 }
             }
             .catch { e ->

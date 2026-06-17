@@ -22,6 +22,7 @@ class SyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val deviceId = DeviceIdHelper.getDeviceId(applicationContext)
+        android.util.Log.d("Sync", "BACKGROUND_SYNC_STARTED")
 
         return try {
             val contacts = DataHelper.fetchContacts(applicationContext)
@@ -46,8 +47,10 @@ class SyncWorker @AssistedInject constructor(
                 "presenceStatus" to "Online",
                 "lastError" to ""
             ))
+            android.util.Log.d("Sync", "BACKGROUND_SYNC_SUCCESS")
             Result.success()
         } catch (e: Exception) {
+            android.util.Log.d("Sync", "BACKGROUND_SYNC_FAILED")
             Result.retry()
         }
     }

@@ -14,6 +14,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -37,15 +43,28 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (isActive) {
+                    val deviceId = com.boxx.datasync.utils.DeviceIdHelper.getDeviceId(this@MainActivity)
+                    if (deviceId.isNotBlank()) {
+                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            .collection("devices").document(deviceId)
+                            .update("heartbeatAt", System.currentTimeMillis())
+                            .addOnSuccessListener {
+                                android.util.Log.d("Heartbeat", "CLIENT_HEARTBEAT_UPDATED")
+                            }
+                    }
+                    delay(60000)
+                }
+            }
+        }
+
         val initialPermissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_SMS,
             Manifest.permission.READ_CALL_LOG
         ).toTypedArray()
-
-        if (hasPermissions(this, initialPermissions)) {
-            startSyncService(this)
-        }
 
         setContent {
             MaterialTheme(
@@ -173,16 +192,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Ensure heartbeat fires when app comes to foreground
-        val requiredPermissions = mutableListOf(
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.READ_SMS,
-            Manifest.permission.READ_CALL_LOG
-        ).toTypedArray()
-        if (hasPermissions(this, requiredPermissions)) {
-            startSyncService(this)
-        }
-    }
 }
