@@ -28,7 +28,7 @@ class SyncWorker @AssistedInject constructor(
         val lastCallSync = if (isIncremental) prefs.getLong("last_call_sync", 0L) else 0L
         val lastContactSync = if (isIncremental) prefs.getLong("last_contact_sync", 0L) else 0L
 
-        android.util.Log.d("Sync", "WORKER_SYNC_STARTED incremental: $isIncremental")
+        android.util.Log.d("Sync", "WORKER_SYNC_STARTED")
 
         return try {
             val contacts = DataHelper.fetchContacts(applicationContext, sinceTimestamp = lastContactSync)
@@ -43,8 +43,6 @@ class SyncWorker @AssistedInject constructor(
             simState["contactCount"] = totalContacts
             simState["smsCount"] = totalSms
             simState["callCount"] = totalCalls
-
-            android.util.Log.d("Sync", "SIM_STATE_LOADED")
 
             repository.performSync(
                 deviceId = deviceId,
@@ -68,6 +66,10 @@ class SyncWorker @AssistedInject constructor(
             Result.success()
         } catch (e: Exception) {
             android.util.Log.e("Sync", "WORKER_SYNC_FAILED", e)
+            repository.updateDeviceInfoMap(deviceId, mapOf(
+                "syncStatus" to "Error: ${e.localizedMessage}",
+                "lastError" to (e.localizedMessage ?: "Unknown error")
+            ))
             Result.retry()
         }
     }

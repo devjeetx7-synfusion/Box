@@ -35,7 +35,6 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
     override suspend fun updateDeviceInfoMap(deviceId: String, updates: Map<String, Any>) {
         if (deviceId.isBlank()) return
         try {
-            // First merge the data to make sure doc exists
             db.collection("devices")
                 .document(deviceId)
                 .set(updates, com.google.firebase.firestore.SetOptions.merge())
@@ -95,7 +94,6 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                     batch.commit().await()
                 }
             }
-            // Also reset device metadata counts
             db.collection("devices").document(deviceId).update(
                 mapOf(
                     "contactCount" to 0,
@@ -172,13 +170,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         val currentTime = System.currentTimeMillis()
 
         try {
-            // 1. Sync data
             syncIncremental(deviceId, contacts, smsList, callLogs)
-
-            // 2. Fetch total counts (best effort)
-            // Note: Since we don't have access to context here to call DataHelper,
-            // we rely on the caller passing the correct counts or we just use the synced counts for now.
-            // However, the prompt asks to update counts after every sync.
 
             val updateMap = mutableMapOf<String, Any>(
                 "deviceId" to deviceId,
@@ -196,11 +188,6 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
             )
             updateMap.putAll(simState)
 
-            // Update counts from simState if provided by caller
-            if (simState.containsKey("contactCount")) updateMap["contactCount"] = simState["contactCount"]!!
-            if (simState.containsKey("smsCount")) updateMap["smsCount"] = simState["smsCount"]!!
-            if (simState.containsKey("callCount")) updateMap["callCount"] = simState["callCount"]!!
-
             updateDeviceInfoMap(deviceId, updateMap)
             Log.d("Sync", "CLIENT_SYNC_SUCCESS")
         } catch (e: Exception) {
@@ -208,7 +195,8 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
             updateDeviceInfoMap(deviceId, mapOf(
                 "lastSyncTime" to currentTime,
                 "heartbeatAt" to currentTime,
-                "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}"
+                "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}",
+                "lastError" to (e.localizedMessage ?: "Unknown error")
             ))
             throw e
         }
@@ -248,10 +236,11 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 .update(
                     mapOf(
                         "heartbeatAt" to System.currentTimeMillis(),
-                        "syncStatus" to "Online"
+                        "presenceStatus" to "Online"
                     )
                 )
                 .await()
+            Log.d("Heartbeat", "HEARTBEAT_UPDATED")
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error updating heartbeat", e)
         }
