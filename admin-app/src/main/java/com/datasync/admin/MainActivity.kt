@@ -48,7 +48,7 @@ class MainActivity : ComponentActivity() {
                         composable("dashboard") {
                             FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "Dashboard")
                             DashboardScreen(dashboardViewModel) { deviceId ->
-                                android.util.Log.d("MainActivity", "NAVIGATING_TO_DEVICE_DETAIL: $deviceId")
+                                android.util.Log.d("MainActivity", "NAVIGATE_DEVICE_DETAIL: $deviceId")
                                 val encodedId = android.net.Uri.encode(deviceId)
                                 navController.navigate("details/$encodedId")
                             }

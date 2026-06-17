@@ -132,7 +132,7 @@ fun DashboardList(devices: List<Device>, onDeviceClick: (String) -> Unit) {
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
                     .clickable {
-                        android.util.Log.d("DashboardScreen", "DASHBOARD_SELECTED_DEVICE_FULL_ID: ${device.deviceId}")
+                        android.util.Log.d("DashboardScreen", "DASHBOARD_FULL_DEVICE_ID: ${device.deviceId}")
                         onDeviceClick(device.deviceId)
                     },
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
