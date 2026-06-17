@@ -8,7 +8,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -329,7 +328,6 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
             }
         }
     ) { padding ->
-        SelectionContainer {
             Box(modifier = Modifier.padding(padding).fillMaxSize()) {
                 PullToRefreshBox(
                     isRefreshing = isRefreshing,
@@ -358,7 +356,6 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                     }
                 }
             }
-        }
     }
 }
 

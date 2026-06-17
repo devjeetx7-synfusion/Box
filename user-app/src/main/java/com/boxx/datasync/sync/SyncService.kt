@@ -43,12 +43,6 @@ class SyncService : Service() {
 
     private var syncJob: Job? = null
 
-    private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            debouncedSync()
-        }
-    }
-
     private var remoteSyncJob: Job? = null
     private var heartbeatJob: Job? = null
 
@@ -72,60 +66,13 @@ class SyncService : Service() {
             startForeground(1, notification)
         }
 
-        try {
-            contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, observer)
-            contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, observer)
-            contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
-        } catch (e: SecurityException) {
-            Log.e("SyncService", "Permission denied for ContentObserver", e)
-            crashlytics.recordException(e)
-        }
-
-        startRemoteSyncListener()
-        startHeartbeat()
     }
 
-    private fun startHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = serviceScope.launch {
-            while (isActive) {
-                repository.updateHeartbeat(deviceId)
-                delay(30000) // 30 seconds
-            }
-        }
-    }
-
-    // Ensure startCommand restarts heartbeat
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startHeartbeat() // Refresh heartbeat on explicit start
-        debouncedSync()
-        return START_STICKY
-    }
-
-    private fun startRemoteSyncListener() {
-        var lastHandledSyncRequest = PreferenceManager.getDefaultSharedPreferences(this).getLong("last_handled_sync_request", 0L)
-        remoteSyncJob?.cancel()
-        remoteSyncJob = serviceScope.launch {
-            repository.observeSyncRequests(deviceId).collect { requestedAt ->
-                if (requestedAt > lastHandledSyncRequest) {
-                    Log.d("SyncService", "Remote sync requested at: $requestedAt")
-                    lastHandledSyncRequest = requestedAt
-                    PreferenceManager.getDefaultSharedPreferences(this@SyncService).edit()
-                        .putLong("last_handled_sync_request", lastHandledSyncRequest)
-                        .apply()
-                    performSync(isFullSync = true)
-                }
-            }
+        serviceScope.launch {
+            performSync(isFullSync = true)
         }
-    }
-
-
-    private fun debouncedSync() {
-        syncJob?.cancel()
-        syncJob = serviceScope.launch {
-            delay(2000) // 2 seconds debounce
-            performSync()
-        }
+        return START_NOT_STICKY
     }
 
     private suspend fun performSync(isFullSync: Boolean = false) {
@@ -197,6 +144,8 @@ class SyncService : Service() {
                 "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
             ))
             Log.d("SyncService", "Sync completed successfully (Full: $isFullSync)")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         } catch (e: Exception) {
             Log.e("SyncService", "Error during sync", e)
             crashlytics.recordException(e)
@@ -210,6 +159,8 @@ class SyncService : Service() {
                 "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}",
                 "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
             ))
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
     }
 
@@ -251,6 +202,5 @@ class SyncService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        contentResolver.unregisterContentObserver(observer)
     }
 }

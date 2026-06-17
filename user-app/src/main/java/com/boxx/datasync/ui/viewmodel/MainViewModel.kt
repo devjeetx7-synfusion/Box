@@ -51,6 +51,21 @@ class MainViewModel @Inject constructor(
                 }
 
                 snapshot?.let { doc ->
+                    val requestedAt = doc.getLong("syncRequestedAt") ?: 0L
+                    var lastHandledSyncRequest = prefs.getLong("last_handled_sync_request", 0L)
+                    if (requestedAt > lastHandledSyncRequest) {
+                        lastHandledSyncRequest = requestedAt
+                        prefs.edit().putLong("last_handled_sync_request", lastHandledSyncRequest).apply()
+
+                        android.util.Log.d("Sync", "CLIENT_SYNC_REQUEST_RECEIVED")
+                        val intent = android.content.Intent(getApplication(), com.boxx.datasync.sync.SyncService::class.java)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            getApplication<Application>().startForegroundService(intent)
+                        } else {
+                            getApplication<Application>().startService(intent)
+                        }
+                    }
+
                     val status = doc.getString("syncStatus") ?: "Idle"
                     if (status.startsWith("Error")) {
                         _syncStatus.value = "Error"

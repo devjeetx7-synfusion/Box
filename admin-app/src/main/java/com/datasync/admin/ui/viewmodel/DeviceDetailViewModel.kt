@@ -131,6 +131,7 @@ class DeviceDetailViewModel @Inject constructor(
         if (deviceId.isBlank()) return
         viewModelScope.launch(exceptionHandler) {
             _syncStatus.value = SyncStatus.Syncing
+            android.util.Log.d("Sync", "ADMIN_SYNC_REQUEST_SENT")
             repository.requestSync(deviceId)
         }
     }
