@@ -94,14 +94,15 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                     batch.commit().await()
                 }
             }
-            db.collection("devices").document(deviceId).update(
+            updateDeviceInfoMap(
+                deviceId,
                 mapOf(
                     "contactCount" to 0,
                     "smsCount" to 0,
                     "callCount" to 0,
                     "notificationCount" to 0
                 )
-            ).await()
+            )
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error deleting data", e)
             crashlytics.recordException(e)
@@ -192,11 +193,13 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
             Log.d("Sync", "CLIENT_SYNC_SUCCESS")
         } catch (e: Exception) {
             Log.e("Sync", "CLIENT_SYNC_FAILED", e)
+            val errorMsg = e.localizedMessage ?: "Unknown error"
             updateDeviceInfoMap(deviceId, mapOf(
                 "lastSyncTime" to currentTime,
                 "heartbeatAt" to currentTime,
-                "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}",
-                "lastError" to (e.localizedMessage ?: "Unknown error")
+                "syncStatus" to "Error: $errorMsg",
+                "lastError" to errorMsg,
+                "presenceStatus" to "Online"
             ))
             throw e
         }
@@ -219,10 +222,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
     override suspend fun incrementNotificationCount(deviceId: String) {
         if (deviceId.isBlank()) return
         try {
-            db.collection("devices")
-                .document(deviceId)
-                .update("notificationCount", FieldValue.increment(1))
-                .await()
+            updateDeviceInfoMap(deviceId, mapOf("notificationCount" to FieldValue.increment(1)))
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error incrementing notification count", e)
         }
@@ -230,19 +230,11 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
 
     override suspend fun updateHeartbeat(deviceId: String) {
         if (deviceId.isBlank()) return
-        try {
-            db.collection("devices")
-                .document(deviceId)
-                .update(
-                    mapOf(
-                        "heartbeatAt" to System.currentTimeMillis(),
-                        "presenceStatus" to "Online"
-                    )
-                )
-                .await()
-            Log.d("Heartbeat", "HEARTBEAT_UPDATED")
-        } catch (e: Exception) {
-            Log.e("DataRepositoryImpl", "Error updating heartbeat", e)
-        }
+        val updates = mapOf(
+            "heartbeatAt" to System.currentTimeMillis(),
+            "presenceStatus" to "Online"
+        )
+        updateDeviceInfoMap(deviceId, updates)
+        Log.d("Heartbeat", "HEARTBEAT_UPDATED")
     }
 }

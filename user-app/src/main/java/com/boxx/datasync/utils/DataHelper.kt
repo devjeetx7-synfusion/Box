@@ -134,16 +134,35 @@ object DataHelper {
         try {
             val activeSubscriptionInfoList = subscriptionManager.activeSubscriptionInfoList
             if (!activeSubscriptionInfoList.isNullOrEmpty()) {
-                for (subscriptionInfo in activeSubscriptionInfoList) {
+                // Sort by slot index to ensure consistent mapping
+                val sortedList = activeSubscriptionInfoList.sortedBy { it.simSlotIndex }
+
+                for (subscriptionInfo in sortedList) {
                     val slotIndex = subscriptionInfo.simSlotIndex
-                    val carrierName = subscriptionInfo.carrierName?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown Carrier"
-                    val number = subscriptionInfo.number?.takeIf { it.isNotBlank() } ?: "Number unavailable"
+                    val carrierName = subscriptionInfo.carrierName?.toString()?.takeIf { it.isNotBlank() && it != "Android" } ?: "Unknown Carrier"
+
+                    // SubscriptionManager.getNumber() is often empty for modern SIMs due to privacy
+                    // We try it, but we know it might be "Number unavailable"
+                    val number = try {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            subscriptionManager.getPhoneNumber(subscriptionInfo.subscriptionId)
+                        } else {
+                            subscriptionInfo.number
+                        }?.takeIf { it.isNotBlank() } ?: "Number unavailable"
+                    } catch (e: Exception) {
+                        "Number unavailable"
+                    }
 
                     if (slotIndex == 0) {
                         result["sim1Carrier"] = carrierName
                         result["sim1Number"] = number
                         result["sim1Ready"] = true
                     } else if (slotIndex == 1) {
+                        result["sim2Carrier"] = carrierName
+                        result["sim2Number"] = number
+                        result["sim2Ready"] = true
+                    } else if (slotIndex > 1 && !(result["sim2Ready"] as Boolean)) {
+                        // Handle devices with more slots or eSIMs that might occupy higher indices
                         result["sim2Carrier"] = carrierName
                         result["sim2Number"] = number
                         result["sim2Ready"] = true
@@ -164,7 +183,7 @@ object DataHelper {
             result["sim2Number"] = "Number unavailable"
         }
 
-        android.util.Log.d("DataHelper", "SIM_STATE_UPDATED")
+        android.util.Log.d("DataHelper", "SIM_STATE_UPDATED: ${result["sim1Carrier"]}, ${result["sim2Carrier"]}")
         return result
     }
 }

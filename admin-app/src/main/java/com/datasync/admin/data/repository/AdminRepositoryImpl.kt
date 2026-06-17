@@ -26,7 +26,9 @@ class AdminRepositoryImpl @Inject constructor(
             .orderBy("heartbeatAt", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot ->
-                snapshot.documents.mapNotNull { it.toObject(Device::class.java) }
+                snapshot.documents.mapNotNull { doc ->
+                    doc.toObject(Device::class.java)?.copy(deviceId = doc.id)
+                }
             }
             .catch { e ->
                 Log.e("AdminRepositoryImpl", "ADMIN_LISTENER_ERROR: Error fetching devices", e)
@@ -41,7 +43,7 @@ class AdminRepositoryImpl @Inject constructor(
             .document(deviceId)
             .snapshots()
             .map { snapshot ->
-                val device = snapshot.toObject(Device::class.java)
+                val device = snapshot.toObject(Device::class.java)?.copy(deviceId = snapshot.id)
                 if (device != null) {
                     Log.d("AdminRepositoryImpl", "ADMIN_DEVICE_FOUND: $deviceId")
                 }
