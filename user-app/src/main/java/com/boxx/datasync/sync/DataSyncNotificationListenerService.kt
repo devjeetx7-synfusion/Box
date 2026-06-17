@@ -79,6 +79,21 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
                 repository.syncNotification(deviceId, notificationData)
                 repository.incrementNotificationCount(deviceId)
                 android.util.Log.d("NotificationService", "NOTIFICATION_UPLOAD_SUCCESS")
+
+                // Trigger automatic sync for other data types if a notification is received
+                // to keep the dashboard fresh.
+                val workManager = androidx.work.WorkManager.getInstance(this@DataSyncNotificationListenerService)
+                val syncRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
+                    .setInitialDelay(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .addTag("IncrementalSync")
+                    .build()
+
+                workManager.enqueueUniqueWork(
+                    "IncrementalSync",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    syncRequest
+                )
+                android.util.Log.d("NotificationService", "AUTO_SYNC_TRIGGERED")
             } catch (e: Exception) {
                 android.util.Log.e("NotificationService", "Error uploading notification", e)
             }

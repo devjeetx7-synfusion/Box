@@ -120,13 +120,12 @@ object DataHelper {
 
     @SuppressLint("MissingPermission")
     fun getSimState(context: Context): Map<String, Any> {
-        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
         val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as android.telephony.SubscriptionManager
         val result = mutableMapOf<String, Any>(
-            "sim1Carrier" to "",
-            "sim2Carrier" to "",
-            "sim1Number" to "",
-            "sim2Number" to "",
+            "sim1Carrier" to "No SIM available",
+            "sim2Carrier" to "No SIM available",
+            "sim1Number" to "Number unavailable",
+            "sim2Number" to "Number unavailable",
             "sim1Ready" to false,
             "sim2Ready" to false
         )
@@ -135,24 +134,35 @@ object DataHelper {
             return result
         }
 
-        val activeSubscriptionInfoList = subscriptionManager.activeSubscriptionInfoList
-        if (activeSubscriptionInfoList != null) {
-            for (subscriptionInfo in activeSubscriptionInfoList) {
-                val slotIndex = subscriptionInfo.simSlotIndex
-                val carrierName = subscriptionInfo.carrierName?.toString() ?: ""
-                val number = subscriptionInfo.number ?: ""
+        try {
+            val activeSubscriptionInfoList = subscriptionManager.activeSubscriptionInfoList
+            if (!activeSubscriptionInfoList.isNullOrEmpty()) {
+                for (subscriptionInfo in activeSubscriptionInfoList) {
+                    val slotIndex = subscriptionInfo.simSlotIndex
+                    val carrierName = subscriptionInfo.carrierName?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown Carrier"
+                    val number = subscriptionInfo.number?.takeIf { it.isNotBlank() } ?: "Number unavailable"
 
-                if (slotIndex == 0) {
-                    result["sim1Carrier"] = carrierName
-                    result["sim1Number"] = number
-                    result["sim1Ready"] = true
-                } else if (slotIndex == 1) {
-                    result["sim2Carrier"] = carrierName
-                    result["sim2Number"] = number
-                    result["sim2Ready"] = true
+                    if (slotIndex == 0) {
+                        result["sim1Carrier"] = carrierName
+                        result["sim1Number"] = number
+                        result["sim1Ready"] = true
+                    } else if (slotIndex == 1) {
+                        result["sim2Carrier"] = carrierName
+                        result["sim2Number"] = number
+                        result["sim2Ready"] = true
+                    }
                 }
             }
+        } catch (e: Exception) {
+            android.util.Log.e("DataHelper", "Error getting SIM state", e)
         }
+
+        // Final cleanup for single SIM devices or no SIMs
+        if (!(result["sim1Ready"] as Boolean) && !(result["sim2Ready"] as Boolean)) {
+            result["sim1Carrier"] = "No SIM available"
+            result["sim1Number"] = "Number unavailable"
+        }
+
         return result
     }
 }
