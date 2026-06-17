@@ -16,7 +16,7 @@ import javax.inject.Inject
 sealed class DeviceDetailUiState {
     object Loading : DeviceDetailUiState()
     data class Success(val device: Device) : DeviceDetailUiState()
-    data class Error(val message: String) : DeviceDetailUiState()
+    data class Error(val message: String, val lastError: String = "") : DeviceDetailUiState()
 }
 
 sealed class TabUiState<out T> {

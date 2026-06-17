@@ -34,14 +34,7 @@ class DashboardViewModel @Inject constructor(
     private var fetchJob: Job? = null
 
     init {
-        loadDevices()
-    }
-
-    fun loadDevices() {
-        fetchJob?.cancel()
-        _uiState.value = DashboardUiState.Loading
-
-        fetchJob = repository.getDevices()
+        repository.getDevices()
             .onEach { devices ->
                 if (devices.isEmpty()) {
                     _uiState.value = DashboardUiState.Empty
@@ -58,15 +51,11 @@ class DashboardViewModel @Inject constructor(
                 )
             }
             .launchIn(viewModelScope)
+    }
 
-        // Timeout handling
-        viewModelScope.launch {
-            delay(15000) // 15 seconds timeout
-            if (_uiState.value is DashboardUiState.Loading) {
-                // If it timed out, try showing Empty state instead of hard error
-                _uiState.value = DashboardUiState.Empty
-            }
-        }
+    fun loadDevices() {
+        // Now just a no-op so pull-to-refresh doesn't crash or rebuild the flow unnecessarily
+        // Realtime listener handles everything natively.
     }
 
     val devices: StateFlow<List<Device>> = repository.getDevices()
