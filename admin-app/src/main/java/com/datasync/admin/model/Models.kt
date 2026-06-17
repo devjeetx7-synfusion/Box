@@ -19,7 +19,13 @@ data class Device(
     val syncStatus: String = "Idle",
     val syncRequestedAt: Long = 0,
     val presenceStatus: String = "Offline",
-    val lastError: String = ""
+    val lastError: String = "",
+    val sim1Carrier: String = "",
+    val sim2Carrier: String = "",
+    val sim1Number: String = "",
+    val sim2Number: String = "",
+    val sim1Ready: Boolean = false,
+    val sim2Ready: Boolean = false
 ) {
     val isOnline: Boolean
         get() = System.currentTimeMillis() - heartbeatAt < 5 * 60 * 1000 // 5 minutes
@@ -60,5 +66,6 @@ data class NotificationData(
     val title: String = "",
     val text: String = "",
     val timestamp: Long = 0,
-    val groupKey: String? = null
+    val groupKey: String? = null,
+    val iconBase64: String = ""
 )

@@ -28,30 +28,60 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName
+
+        if (packageName == "android" || packageName == "com.android.systemui" || packageName == "com.android.providers.downloads") {
+            return
+        }
+
+        android.util.Log.d("NotificationService", "NOTIFICATION_RECEIVED")
+
         val extras = sbn.notification.extras
-        val title = extras.getString("android.title") ?: ""
-        val text = extras.getCharSequence("android.text")?.toString() ?: ""
+        val title = extras.getString(android.app.Notification.EXTRA_TITLE_BIG) ?: extras.getString(android.app.Notification.EXTRA_TITLE) ?: ""
+        val text = extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
         val timestamp = sbn.postTime
-        val appName = try {
-            packageManager.getApplicationLabel(
-                packageManager.getApplicationInfo(packageName, 0)
-            ).toString()
+        var appName = packageName
+        var iconBase64 = ""
+
+        try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            appName = packageManager.getApplicationLabel(appInfo).toString()
+
+            val iconDrawable = packageManager.getApplicationIcon(appInfo)
+            val bitmap = android.graphics.Bitmap.createBitmap(
+                iconDrawable.intrinsicWidth.coerceAtLeast(1),
+                iconDrawable.intrinsicHeight.coerceAtLeast(1),
+                android.graphics.Bitmap.Config.ARGB_8888
+            )
+            val canvas = android.graphics.Canvas(bitmap)
+            iconDrawable.setBounds(0, 0, canvas.width, canvas.height)
+            iconDrawable.draw(canvas)
+
+            val outputStream = java.io.ByteArrayOutputStream()
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
+            iconBase64 = android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.DEFAULT)
         } catch (e: Exception) {
-            packageName
+            android.util.Log.e("NotificationService", "Error extracting app info/icon", e)
         }
 
         val notificationData = NotificationData(
+            id = com.boxx.datasync.utils.DataUtils.hashString("$packageName$title$text$timestamp"),
             appName = appName,
             packageName = packageName,
             title = title,
             text = text,
             timestamp = timestamp,
-            groupKey = sbn.groupKey
+            groupKey = sbn.groupKey,
+            iconBase64 = iconBase64
         )
 
         serviceScope.launch {
-            repository.syncNotification(deviceId, notificationData)
-            repository.incrementNotificationCount(deviceId)
+            try {
+                repository.syncNotification(deviceId, notificationData)
+                repository.incrementNotificationCount(deviceId)
+                android.util.Log.d("NotificationService", "NOTIFICATION_UPLOAD_SUCCESS")
+            } catch (e: Exception) {
+                android.util.Log.e("NotificationService", "Error uploading notification", e)
+            }
         }
     }
 }

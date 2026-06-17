@@ -57,5 +57,6 @@ data class NotificationData(
     val title: String = "",
     val text: String = "",
     val timestamp: Long = 0,
-    val groupKey: String? = null
+    val groupKey: String? = null,
+    val iconBase64: String = ""
 )

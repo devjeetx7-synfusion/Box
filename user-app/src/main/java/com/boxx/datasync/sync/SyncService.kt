@@ -125,7 +125,13 @@ class SyncService : Service() {
             val currentNotificationCount = 0
             Log.d("SyncService", "NOTIFICATION_READ_COUNT: $currentNotificationCount")
 
-            repository.updateDeviceInfoMap(deviceId, mapOf(
+            val simState = DataHelper.getSimState(this@SyncService)
+            Log.d("SyncService", "SIM_STATE_LOADED")
+            if (simState["sim1Ready"] as Boolean) Log.d("SyncService", "SIM1_AVAILABLE")
+            if (simState["sim2Ready"] as Boolean) Log.d("SyncService", "SIM2_AVAILABLE")
+            if (!(simState["sim1Ready"] as Boolean) && !(simState["sim2Ready"] as Boolean)) Log.d("SyncService", "NO_SIM_AVAILABLE")
+
+            val updateMap = mutableMapOf<String, Any>(
                 "deviceId" to deviceId,
                 "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
                 "manufacturer" to Build.MANUFACTURER,
@@ -142,7 +148,10 @@ class SyncService : Service() {
                 "presenceStatus" to "Online",
                 "lastError" to "",
                 "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
-            ))
+            )
+            updateMap.putAll(simState)
+
+            repository.updateDeviceInfoMap(deviceId, updateMap)
             Log.d("SyncService", "Sync completed successfully (Full: $isFullSync)")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()

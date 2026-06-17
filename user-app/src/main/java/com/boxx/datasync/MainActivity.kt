@@ -99,6 +99,7 @@ class MainActivity : ComponentActivity() {
                                 !ActivityCompat.shouldShowRequestPermissionRationale(this, it) &&
                                 ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
                             }
+                            android.util.Log.d("Permission", "NOTIFICATION_PERMISSION_STATUS: ${perms[Manifest.permission.POST_NOTIFICATIONS] == true}")
                             if (permanentlyDenied) {
                                 showSettingsDialog = true
                             }
@@ -190,6 +191,7 @@ class MainActivity : ComponentActivity() {
         } else {
             context.startService(intent)
         }
+        (applicationContext as? UserApplication)?.setupContentObservers()
     }
 
 }

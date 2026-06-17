@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -87,7 +88,8 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
                     Spacer(modifier = Modifier.height(16.dp))
                     val context = LocalContext.current
                     TextButton(onClick = {
-                        copyToClipboard(context, "Device ID: $deviceId\nError: ${state.message}\nTime: ${System.currentTimeMillis()}")
+                        val trace = if (state.lastError.isNotBlank()) state.lastError else state.message
+                        copyToClipboard(context, "Device ID: $deviceId\nError: $trace\nTime: ${System.currentTimeMillis()}")
                     }) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
@@ -195,12 +197,14 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                             if (showCallForwarding) {
                                 ForwardingBottomSheet(
                                     title = "Call Forwarding",
+                                    device = device,
                                     onDismiss = { showCallForwarding = false }
                                 )
                             }
                             if (showSmsForwarding) {
                                 ForwardingBottomSheet(
                                     title = "SMS Forwarding",
+                                    device = device,
                                     onDismiss = { showSmsForwarding = false }
                                 )
                             }
@@ -1020,12 +1024,27 @@ fun NotificationItem(
             Text(formatDate(notification.timestamp), style = MaterialTheme.typography.labelSmall)
         },
         leadingContent = {
-            Icon(
-                imageVector = getAppIcon(notification.packageName),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(32.dp)
-            )
+            var iconSet = false
+            if (notification.iconBase64.isNotBlank()) {
+                val bytes = try { android.util.Base64.decode(notification.iconBase64, android.util.Base64.DEFAULT) } catch(e: Exception) { null }
+                val bitmap = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                if (bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    iconSet = true
+                }
+            }
+            if (!iconSet) {
+                Icon(
+                    imageVector = getAppIcon(notification.packageName),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
     )
 
@@ -1355,8 +1374,14 @@ fun DeleteConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ForwardingBottomSheet(title: String, onDismiss: () -> Unit) {
-    var selectedSim by remember { mutableIntStateOf(1) }
+fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) {
+    var selectedSim by remember {
+        mutableIntStateOf(
+            if (device.sim1Ready) 1 else if (device.sim2Ready) 2 else 0
+        )
+    }
+
+    var forwardingNumber by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1371,34 +1396,55 @@ fun ForwardingBottomSheet(title: String, onDismiss: () -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = selectedSim == 1, onClick = { selectedSim = 1 }, label = { Text("SIM 1") })
-                FilterChip(selected = selectedSim == 2, onClick = { selectedSim = 2 }, label = { Text("SIM 2") })
-                FilterChip(selected = false, onClick = { }, label = { Text("No SIM") }, enabled = false)
+                if (device.sim1Ready) {
+                    FilterChip(selected = selectedSim == 1, onClick = { selectedSim = 1 }, label = { Text("SIM 1") })
+                }
+                if (device.sim2Ready) {
+                    FilterChip(selected = selectedSim == 2, onClick = { selectedSim = 2 }, label = { Text("SIM 2") })
+                }
+                if (!device.sim1Ready && !device.sim2Ready) {
+                    FilterChip(selected = true, onClick = { }, label = { Text("No SIM available") })
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("SIM $selectedSim: ${if (selectedSim == 1) "Active" else "Standby"}", fontWeight = FontWeight.SemiBold)
-                    Text("Carrier: ${if (selectedSim == 1) "Verizon" else "T-Mobile"}", style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = "",
-                        onValueChange = {},
-                        label = { Text("Forwarding number") },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("+1...") },
-                        enabled = false,
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = {}, enabled = false) { Text("Stop") }
-                        Button(onClick = {}, enabled = false) { Text("Start Forwarding") }
+            if (!device.sim1Ready && !device.sim2Ready) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("No SIM available", fontWeight = FontWeight.SemiBold)
+                        Text("Call/SMS forwarding requires an active SIM card.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        val carrier = if (selectedSim == 1) device.sim1Carrier else device.sim2Carrier
+                        val number = if (selectedSim == 1) device.sim1Number else device.sim2Number
+
+                        Text("SIM $selectedSim: Active", fontWeight = FontWeight.SemiBold)
+                        Text("Carrier: ${carrier.ifBlank { "Unknown" }}", style = MaterialTheme.typography.bodySmall)
+                        Text("Number: ${number.ifBlank { "Number unavailable" }}", style = MaterialTheme.typography.bodySmall)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = forwardingNumber,
+                            onValueChange = { forwardingNumber = it },
+                            label = { Text("Forwarding number") },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("+1...") },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = {}, enabled = false) { Text("Stop") }
+                            Button(onClick = {}, enabled = forwardingNumber.isNotBlank()) { Text("Start Forwarding") }
+                        }
                     }
                 }
             }
