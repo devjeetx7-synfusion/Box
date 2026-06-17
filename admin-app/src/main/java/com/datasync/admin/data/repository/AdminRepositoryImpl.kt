@@ -39,10 +39,13 @@ class AdminRepositoryImpl @Inject constructor(
 
     override fun getDevice(deviceId: String): Flow<Device?> {
         Log.d("AdminRepositoryImpl", "ADMIN_LISTENER_STARTED: getDevice $deviceId")
+        if (deviceId.isBlank()) return kotlinx.coroutines.flow.flowOf(null)
+
         return db.collection("devices")
             .document(deviceId)
             .snapshots()
             .map { snapshot ->
+                if (!snapshot.exists()) return@map null
                 val device = snapshot.toObject(Device::class.java)?.copy(deviceId = snapshot.id)
                 if (device != null) {
                     Log.d("AdminRepositoryImpl", "ADMIN_DEVICE_FOUND: $deviceId")

@@ -19,7 +19,7 @@ class BootReceiver : BroadcastReceiver() {
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 "PeriodicSync",
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 syncRequest
             )
 
