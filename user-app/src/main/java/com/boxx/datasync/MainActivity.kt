@@ -34,11 +34,16 @@ import com.boxx.datasync.ui.screen.MainScreen
 import com.boxx.datasync.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.TimeUnit
+import com.boxx.datasync.domain.repository.DataRepository
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+
+    @Inject
+    lateinit var repository: DataRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,23 +53,23 @@ class MainActivity : ComponentActivity() {
                 while (isActive) {
                     val deviceId = com.boxx.datasync.utils.DeviceIdHelper.getDeviceId(this@MainActivity)
                     if (deviceId.isNotBlank()) {
-                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                            .collection("devices").document(deviceId)
-                            .update("heartbeatAt", System.currentTimeMillis())
-                            .addOnSuccessListener {
-                                android.util.Log.d("Heartbeat", "CLIENT_HEARTBEAT_UPDATED")
-                            }
+                        repository.updateHeartbeat(deviceId)
                     }
                     delay(60000)
                 }
             }
         }
 
-        val initialPermissions = mutableListOf(
+        val requiredPermissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_SMS,
-            Manifest.permission.READ_CALL_LOG
-        ).toTypedArray()
+            Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.READ_PHONE_STATE
+        ).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }.toTypedArray()
 
         setContent {
             MaterialTheme(
@@ -75,18 +80,6 @@ class MainActivity : ComponentActivity() {
                     var showRationale by remember { mutableStateOf(false) }
                     var showExplanation by remember { mutableStateOf(false) }
                     var showSettingsDialog by remember { mutableStateOf(false) }
-
-                    val requiredPermissions = remember {
-                        mutableListOf(
-                            Manifest.permission.READ_CONTACTS,
-                            Manifest.permission.READ_SMS,
-                            Manifest.permission.READ_CALL_LOG
-                        ).apply {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                add(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }.toTypedArray()
-                    }
 
                     val launcher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
@@ -99,7 +92,6 @@ class MainActivity : ComponentActivity() {
                                 !ActivityCompat.shouldShowRequestPermissionRationale(this, it) &&
                                 ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
                             }
-                            android.util.Log.d("Permission", "NOTIFICATION_PERMISSION_STATUS: ${perms[Manifest.permission.POST_NOTIFICATIONS] == true}")
                             if (permanentlyDenied) {
                                 showSettingsDialog = true
                             }

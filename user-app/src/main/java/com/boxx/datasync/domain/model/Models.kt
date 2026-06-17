@@ -19,7 +19,13 @@ data class Device(
     val syncStatus: String = "Idle",
     val syncRequestedAt: Long = 0,
     val presenceStatus: String = "Offline",
-    val lastError: String = ""
+    val lastError: String = "",
+    val sim1Carrier: String = "",
+    val sim2Carrier: String = "",
+    val sim1Number: String = "",
+    val sim2Number: String = "",
+    val sim1Ready: Boolean = false,
+    val sim2Ready: Boolean = false
 )
 
 @IgnoreExtraProperties

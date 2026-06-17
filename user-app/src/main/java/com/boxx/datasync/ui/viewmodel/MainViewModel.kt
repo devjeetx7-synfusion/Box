@@ -35,7 +35,6 @@ class MainViewModel @Inject constructor(
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private val deviceId = DeviceIdHelper.getDeviceId(application)
-    private val prefs = PreferenceManager.getDefaultSharedPreferences(application)
 
     init {
         observeFirestore()
@@ -51,26 +50,14 @@ class MainViewModel @Inject constructor(
                 }
 
                 snapshot?.let { doc ->
-                    val requestedAt = doc.getLong("syncRequestedAt") ?: 0L
-                    var lastHandledSyncRequest = prefs.getLong("last_handled_sync_request", 0L)
-                    if (requestedAt > lastHandledSyncRequest) {
-                        lastHandledSyncRequest = requestedAt
-                        prefs.edit().putLong("last_handled_sync_request", lastHandledSyncRequest).apply()
-
-                        android.util.Log.d("Sync", "ADMIN_SYNC_REQUEST_RECEIVED")
-                        val intent = android.content.Intent(getApplication(), com.boxx.datasync.sync.SyncService::class.java)
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            getApplication<Application>().startForegroundService(intent)
-                        } else {
-                            getApplication<Application>().startService(intent)
-                        }
-                    }
-
                     val status = doc.getString("syncStatus") ?: "Idle"
                     if (status.startsWith("Error")) {
                         _syncStatus.value = "Error"
                         _errorMessage.value = status.removePrefix("Error: ")
                         _isLoading.value = false
+                    } else if (status == "Syncing...") {
+                        _syncStatus.value = "Syncing..."
+                        _isLoading.value = true
                     } else {
                         doc.getLong("lastSyncTime")?.let {
                             val sdf = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
@@ -88,10 +75,6 @@ class MainViewModel @Inject constructor(
         _isLoading.value = true
         _syncStatus.value = "Syncing..."
         _errorMessage.value = null
-
-        // Removed artificial 15s timeout to rely on real-time Firestore updates.
-        // If sync fails, SyncService/DataRepository will update Firestore with the error,
-        // which this ViewModel observes via the snapshot listener.
     }
 
     fun deleteSyncedData() {

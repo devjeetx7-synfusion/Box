@@ -112,9 +112,6 @@ object DataHelper {
     }
 
     fun fetchNotifications(context: Context): List<NotificationData> {
-        // Since notifications are stored in Firestore as they arrive via NotificationListenerService,
-        // this method could return local state if cached, but for count purposes we might just use Firestore or a local DB.
-        // For now, returning empty to avoid crash if it's called from SyncService.
         return emptyList()
     }
 
@@ -157,12 +154,17 @@ object DataHelper {
             android.util.Log.e("DataHelper", "Error getting SIM state", e)
         }
 
-        // Final cleanup for single SIM devices or no SIMs
-        if (!(result["sim1Ready"] as Boolean) && !(result["sim2Ready"] as Boolean)) {
+        // Ensure "No SIM available" fallback is handled if SIM was once ready but is no longer detected.
+        if (!(result["sim1Ready"] as Boolean)) {
             result["sim1Carrier"] = "No SIM available"
             result["sim1Number"] = "Number unavailable"
         }
+        if (!(result["sim2Ready"] as Boolean)) {
+            result["sim2Carrier"] = "No SIM available"
+            result["sim2Number"] = "Number unavailable"
+        }
 
+        android.util.Log.d("DataHelper", "SIM_STATE_UPDATED")
         return result
     }
 }
