@@ -92,8 +92,10 @@ class SyncService : Service() {
                     PreferenceManager.getDefaultSharedPreferences(this@SyncService).edit().putLong("last_handled_sync_request", lastHandled).apply()
                     performSync(isFullSync = false)
                 }
+                stopSelf(startId)
             }
         }
+        return START_NOT_STICKY
     }
 
     private suspend fun performSync(isFullSync: Boolean) {

@@ -40,6 +40,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 .document(deviceId)
                 .set(updates, SetOptions.merge())
                 .await()
+            Log.d("DataRepositoryImpl", "DEVICE_DOC_UPDATED: $deviceId")
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error updating device info map", e)
             crashlytics.recordException(e)
@@ -104,15 +105,15 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                     batch.commit().await()
                 }
             }
-            // Also reset device metadata counts
-            db.collection("devices").document(deviceId).update(
+            updateDeviceInfoMap(
+                deviceId,
                 mapOf(
                     "contactCount" to 0,
                     "smsCount" to 0,
                     "callCount" to 0,
                     "notificationCount" to 0
                 )
-            ).await()
+            )
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error deleting data", e)
             crashlytics.recordException(e)
@@ -131,6 +132,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
             .collection(collectionName)
 
         try {
+            Log.d("DataRepositoryImpl", "FIRESTORE_BATCH_START: collection=$collectionName items=${data.size}")
             val chunks = data.chunked(500)
             for (chunk in chunks) {
                 val batch = db.batch()
@@ -141,8 +143,9 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 }
                 batch.commit().await()
             }
+            Log.d("DataRepositoryImpl", "FIRESTORE_BATCH_SUCCESS: collection=$collectionName")
         } catch (e: Exception) {
-            Log.e("DataRepositoryImpl", "Error syncing $collectionName", e)
+            Log.e("DataRepositoryImpl", "FIRESTORE_BATCH_ERROR: collection=$collectionName error=${e.localizedMessage}", e)
             crashlytics.recordException(e)
             throw e
         }
@@ -165,6 +168,53 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         if (contacts.isNotEmpty()) syncContacts(deviceId, contacts)
         if (smsList.isNotEmpty()) syncSMS(deviceId, smsList)
         if (callLogs.isNotEmpty()) syncCallLogs(deviceId, callLogs)
+    }
+
+    override suspend fun performSync(
+        deviceId: String,
+        contacts: List<Contact>,
+        smsList: List<SMS>,
+        callLogs: List<CallLog>,
+        simState: Map<String, Any>,
+        isFullSync: Boolean,
+        lastHandledSyncRequest: Long
+    ) {
+        if (deviceId.isBlank()) return
+        val currentTime = System.currentTimeMillis()
+
+        try {
+            syncIncremental(deviceId, contacts, smsList, callLogs)
+
+            val updateMap = mutableMapOf<String, Any>(
+                "deviceId" to deviceId,
+                "deviceName" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                "manufacturer" to android.os.Build.MANUFACTURER,
+                "model" to android.os.Build.MODEL,
+                "osVersion" to android.os.Build.VERSION.RELEASE,
+                "lastSyncTime" to currentTime,
+                "heartbeatAt" to currentTime,
+                "timestamp" to currentTime,
+                "syncStatus" to "Synced",
+                "presenceStatus" to "Online",
+                "lastError" to "",
+                "syncRequestedAt" to lastHandledSyncRequest
+            )
+            updateMap.putAll(simState)
+
+            updateDeviceInfoMap(deviceId, updateMap)
+            Log.d("Sync", "CLIENT_SYNC_SUCCESS")
+        } catch (e: Exception) {
+            Log.e("Sync", "CLIENT_SYNC_FAILED", e)
+            val errorMsg = e.localizedMessage ?: "Unknown error"
+            updateDeviceInfoMap(deviceId, mapOf(
+                "lastSyncTime" to currentTime,
+                "heartbeatAt" to currentTime,
+                "syncStatus" to "Error: $errorMsg",
+                "lastError" to errorMsg,
+                "presenceStatus" to "Online"
+            ))
+            throw e
+        }
     }
 
     override fun observeSyncRequests(deviceId: String): Flow<Long> {

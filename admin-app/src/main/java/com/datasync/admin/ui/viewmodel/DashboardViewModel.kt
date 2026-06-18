@@ -11,6 +11,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 sealed class DashboardUiState {
@@ -32,19 +34,13 @@ class DashboardViewModel @Inject constructor(
     private var fetchJob: Job? = null
 
     init {
-        loadDevices()
-    }
-
-    fun loadDevices() {
-        fetchJob?.cancel()
-        _uiState.value = DashboardUiState.Loading
-
-        fetchJob = repository.getDevices()
+        repository.getDevices()
             .onEach { devices ->
                 if (devices.isEmpty()) {
                     _uiState.value = DashboardUiState.Empty
                 } else {
                     _uiState.value = DashboardUiState.Success(devices)
+                    android.util.Log.d("Presence", "ADMIN_PRESENCE_UPDATED")
                 }
             }
             .catch { e ->
@@ -55,14 +51,11 @@ class DashboardViewModel @Inject constructor(
                 )
             }
             .launchIn(viewModelScope)
+    }
 
-        // Timeout handling
-        viewModelScope.launch {
-            delay(15000) // 15 seconds timeout
-            if (_uiState.value is DashboardUiState.Loading) {
-                _uiState.value = DashboardUiState.Error("Loading timeout. Check your internet or Firebase rules.")
-            }
-        }
+    fun loadDevices() {
+        // Now just a no-op so pull-to-refresh doesn't crash or rebuild the flow unnecessarily
+        // Realtime listener handles everything natively.
     }
 
     val devices: StateFlow<List<Device>> = repository.getDevices()
@@ -81,6 +74,58 @@ class DashboardViewModel @Inject constructor(
     fun setThemeMode(mode: String) {
         viewModelScope.launch {
             settingsManager.setThemeMode(mode)
+        }
+    }
+
+    fun testFirebaseConnection() {
+        _uiState.value = DashboardUiState.Loading
+        viewModelScope.launch {
+            try {
+                val app = com.google.firebase.FirebaseApp.getInstance()
+                val projectId = app.options.projectId
+                val appId = app.options.applicationId
+                // Assuming you have access to context or package name, we just hardcode or get it.
+                // We'll just show the ones from Firebase Options
+                val infoStr = "Proj: $projectId, App: $appId"
+
+                // Let's read from the client test document. We can use the first device ID in our current state.
+                val firstDeviceId = devices.value.firstOrNull()?.deviceId
+
+                if (firstDeviceId != null) {
+                    val snapshot = FirebaseFirestore.getInstance()
+                        .collection("debug")
+                        .document("client_test")
+                        .collection(firstDeviceId)
+                        .document("test_doc")
+                        .get()
+                        .await()
+
+                    if (snapshot.exists()) {
+                        val status = snapshot.getString("status") ?: "Unknown status"
+                        val clientProjId = snapshot.getString("projectId") ?: ""
+
+                        _uiState.value = DashboardUiState.Error(
+                            message = "Firebase Connected! Client doc found for $firstDeviceId.\nAdmin Proj: $projectId\nClient Proj: $clientProjId",
+                            trace = "Connection successful. Client status: $status"
+                        )
+                    } else {
+                        _uiState.value = DashboardUiState.Error(
+                            message = "Firebase test failed: test doc not found for $firstDeviceId",
+                            trace = "Document does not exist."
+                        )
+                    }
+                } else {
+                    _uiState.value = DashboardUiState.Error(
+                        message = "Firebase Connected! $infoStr\nNo devices available to check client doc.",
+                        trace = "Connection successful but device list is empty."
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.value = DashboardUiState.Error(
+                    message = "Firebase test failed: ${e.localizedMessage}",
+                    trace = e.stackTraceToString()
+                )
+            }
         }
     }
 }

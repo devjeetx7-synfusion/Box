@@ -112,9 +112,67 @@ object DataHelper {
     }
 
     fun fetchNotifications(context: Context): List<NotificationData> {
-        // Since notifications are stored in Firestore as they arrive via NotificationListenerService,
-        // this method could return local state if cached, but for count purposes we might just use Firestore or a local DB.
-        // For now, returning empty to avoid crash if it's called from SyncService.
         return emptyList()
+    }
+
+    @SuppressLint("MissingPermission")
+    fun getSimState(context: Context): Map<String, Any> {
+        val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as android.telephony.SubscriptionManager
+        val result = mutableMapOf<String, Any>(
+            "sim1Carrier" to "No SIM available",
+            "sim2Carrier" to "No SIM available",
+            "sim1Number" to "Number unavailable",
+            "sim2Number" to "Number unavailable",
+            "sim1Ready" to false,
+            "sim2Ready" to false
+        )
+
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_PHONE_STATE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.e("DataHelper", "SIM_STATE_FAILED: Missing READ_PHONE_STATE permission")
+            return result
+        }
+
+        try {
+            val activeSubscriptionInfoList = subscriptionManager.activeSubscriptionInfoList
+            if (!activeSubscriptionInfoList.isNullOrEmpty()) {
+                // Sort by slot index to ensure consistent mapping
+                val sortedList = activeSubscriptionInfoList.sortedBy { it.simSlotIndex }
+
+                for (subscriptionInfo in sortedList) {
+                    val slotIndex = subscriptionInfo.simSlotIndex
+                    val carrierName = subscriptionInfo.carrierName?.toString()?.takeIf { it.isNotBlank() && it != "Android" } ?: "Unknown Carrier"
+
+                    val number = try {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            subscriptionManager.getPhoneNumber(subscriptionInfo.subscriptionId)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            subscriptionInfo.number
+                        }?.takeIf { it.isNotBlank() } ?: "Number unavailable"
+                    } catch (e: Exception) {
+                        "Number unavailable"
+                    }
+
+                    if (slotIndex == 0) {
+                        result["sim1Carrier"] = carrierName
+                        result["sim1Number"] = number
+                        result["sim1Ready"] = true
+                    } else if (slotIndex == 1) {
+                        result["sim2Carrier"] = carrierName
+                        result["sim2Number"] = number
+                        result["sim2Ready"] = true
+                    } else if (slotIndex > 1 && !(result["sim2Ready"] as Boolean)) {
+                        result["sim2Carrier"] = carrierName
+                        result["sim2Number"] = number
+                        result["sim2Ready"] = true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DataHelper", "SIM_STATE_ERROR", e)
+        }
+
+        android.util.Log.d("DataHelper", "SIM_STATE_UPDATED")
+        return result
     }
 }

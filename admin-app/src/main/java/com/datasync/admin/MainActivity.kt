@@ -48,7 +48,9 @@ class MainActivity : ComponentActivity() {
                         composable("dashboard") {
                             FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "Dashboard")
                             DashboardScreen(dashboardViewModel) { deviceId ->
-                                navController.navigate("details/$deviceId")
+                                android.util.Log.d("MainActivity", "NAVIGATE_DEVICE_DETAIL: $deviceId")
+                                val encodedId = android.net.Uri.encode(deviceId)
+                                navController.navigate("details/$encodedId")
                             }
                         }
                         composable(
@@ -56,6 +58,7 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(navArgument("deviceId") { type = NavType.StringType })
                         ) { backStackEntry ->
                             val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
+                            android.util.Log.d("MainActivity", "DETAIL_RECEIVED_DEVICE_ID: $deviceId")
                             val detailViewModel: DeviceDetailViewModel = hiltViewModel()
                             FirebaseCrashlytics.getInstance().setCustomKey("current_screen", "DeviceDetails")
                             FirebaseCrashlytics.getInstance().setCustomKey("target_device_id", deviceId)

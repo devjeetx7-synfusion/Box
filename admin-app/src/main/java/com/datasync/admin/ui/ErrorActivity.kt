@@ -8,7 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -148,16 +147,14 @@ fun ErrorScreen(errorDetails: String, threadName: String, screenName: String) {
                 shape = ShapeDefaults.Medium,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                SelectionContainer {
-                    Text(
-                        text = errorDetails,
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            lineHeight = 18.sp
-                        )
+                Text(
+                    text = errorDetails,
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 18.sp
                     )
-                }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -166,6 +163,7 @@ fun ErrorScreen(errorDetails: String, threadName: String, screenName: String) {
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
             )
+            android.util.Log.d("SelectionFix", "SELECTION_CRASH_FIX_APPLIED")
         }
     }
 }
