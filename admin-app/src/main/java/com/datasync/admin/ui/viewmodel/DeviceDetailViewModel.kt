@@ -152,6 +152,20 @@ class DeviceDetailViewModel @Inject constructor(
         }
     }
 
+    fun sendSms(number: String, message: String, simSlot: Int) {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            repository.requestSms(deviceId, number, message, simSlot)
+        }
+    }
+
+    fun makeCall(number: String, simSlot: Int) {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            repository.requestCall(deviceId, number, simSlot)
+        }
+    }
+
     val device: StateFlow<Device?> = if (deviceId.isBlank()) {
         MutableStateFlow<Device?>(null).asStateFlow()
     } else {

