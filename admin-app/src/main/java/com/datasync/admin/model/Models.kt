@@ -20,7 +20,7 @@ data class Device(
     val syncRequestedAt: Long = 0
 ) {
     val isOnline: Boolean
-        get() = System.currentTimeMillis() - heartbeatAt < 3 * 60 * 1000 // 3 minutes
+        get() = System.currentTimeMillis() - heartbeatAt < 5 * 60 * 1000 // 5 minutes
 }
 
 @IgnoreExtraProperties
