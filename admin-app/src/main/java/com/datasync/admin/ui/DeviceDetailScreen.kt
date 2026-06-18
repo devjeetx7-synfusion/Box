@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.datasync.admin.ui.viewmodel.DeviceDetailViewModel
 import com.datasync.admin.ui.viewmodel.DeviceDetailUiState
 import com.datasync.admin.ui.viewmodel.SyncStatus
+import com.datasync.admin.ui.viewmodel.TabUiState
 import com.datasync.admin.model.*
 import com.datasync.admin.utils.DataUtils.hashString
 import com.datasync.admin.utils.DataUtils.formatDate
@@ -470,7 +471,8 @@ data class TabItem(val title: String, val icon: ImageVector)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val contacts by viewModel.contacts.collectAsStateWithLifecycle()
+    val contactsState by viewModel.contacts.collectAsStateWithLifecycle()
+    val contacts = (contactsState as? TabUiState.Success<Contact>)?.items ?: emptyList()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -489,9 +491,11 @@ fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 onDeleteAll = { viewModel.deleteAllVisible("contacts", contacts) }
             )
 
-            if (contacts.isEmpty()) {
-                EmptyState("No contacts found")
-            } else {
+            when {
+                contactsState is TabUiState.Loading -> LoadingState("Loading contacts...")
+                contactsState is TabUiState.Error -> TabErrorState((contactsState as TabUiState.Error).message, (contactsState as TabUiState.Error).trace)
+                contacts.isEmpty() -> EmptyState("No contacts found")
+                else -> {
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(bottom = 80.dp),
@@ -601,7 +605,8 @@ fun ContactItem(contact: Contact, onClick: () -> Unit, onLongClick: () -> Unit) 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val messages by viewModel.sms.collectAsStateWithLifecycle()
+    val messagesState by viewModel.sms.collectAsStateWithLifecycle()
+    val messages = (messagesState as? TabUiState.Success<SMS>)?.items ?: emptyList()
     val filter by viewModel.smsFilter.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -628,9 +633,11 @@ fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             )
 
-            if (messages.isEmpty()) {
-                EmptyState("No messages found")
-            } else {
+            when {
+                messagesState is TabUiState.Loading -> LoadingState("Loading messages...")
+                messagesState is TabUiState.Error -> TabErrorState((messagesState as TabUiState.Error).message, (messagesState as TabUiState.Error).trace)
+                messages.isEmpty() -> EmptyState("No messages found")
+                else -> {
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(bottom = 80.dp),
@@ -771,7 +778,8 @@ fun SmsItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val notifications by viewModel.notifications.collectAsStateWithLifecycle()
+    val notificationsState by viewModel.notifications.collectAsStateWithLifecycle()
+    val notifications = (notificationsState as? TabUiState.Success<NotificationData>)?.items ?: emptyList()
     val appFilters by viewModel.appFilters.collectAsStateWithLifecycle()
     val selectedApp by viewModel.selectedApp.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -828,9 +836,11 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                 }
             )
 
-            if (notifications.isEmpty()) {
-                EmptyState("No notifications found")
-            } else {
+            when {
+                notificationsState is TabUiState.Loading -> LoadingState("Loading notifications...")
+                notificationsState is TabUiState.Error -> TabErrorState((notificationsState as TabUiState.Error).message, (notificationsState as TabUiState.Error).trace)
+                notifications.isEmpty() -> EmptyState("No notifications found")
+                else -> {
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(bottom = 80.dp),
@@ -967,7 +977,8 @@ fun NotificationItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val calls by viewModel.callLogs.collectAsStateWithLifecycle()
+    val callsState by viewModel.callLogs.collectAsStateWithLifecycle()
+    val calls = (callsState as? TabUiState.Success<CallLog>)?.items ?: emptyList()
     val filter by viewModel.callFilter.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -995,9 +1006,11 @@ fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             )
 
-            if (calls.isEmpty()) {
-                EmptyState("No call logs found")
-            } else {
+            when {
+                callsState is TabUiState.Loading -> LoadingState("Loading call logs...")
+                callsState is TabUiState.Error -> TabErrorState((callsState as TabUiState.Error).message, (callsState as TabUiState.Error).trace)
+                calls.isEmpty() -> EmptyState("No call logs found")
+                else -> {
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(bottom = 80.dp),
@@ -1169,6 +1182,35 @@ fun TabHeader(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun LoadingState(message: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun TabErrorState(message: String, trace: String = "") {
+    val context = LocalContext.current
+    Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Error, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.error)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(message, color = MaterialTheme.colorScheme.error)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(onClick = { copyToClipboard(context, if (trace.isBlank()) message else "$message\n$trace") }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Copy Debug Info")
+            }
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 package com.boxx.datasync.sync
 
 import android.service.notification.NotificationListenerService
+import android.util.Log
 import android.service.notification.StatusBarNotification
 import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.domain.model.NotificationData
@@ -26,6 +27,18 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
         deviceId = DeviceIdHelper.getDeviceId(this)
     }
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        Log.d("NotificationListener", "NOTIFICATION_LISTENER_CONNECTED")
+        serviceScope.launch { repository.updateHeartbeat(deviceId) }
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        Log.d("NotificationListener", "NOTIFICATION_LISTENER_DISCONNECTED")
+        serviceScope.launch { repository.updateHeartbeat(deviceId) }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName
         val extras = sbn.notification.extras
@@ -40,7 +53,9 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             packageName
         }
 
+        val notificationId = sbn.key.ifBlank { "$packageName-$timestamp" }
         val notificationData = NotificationData(
+            id = notificationId,
             appName = appName,
             packageName = packageName,
             title = title,
@@ -49,9 +64,13 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             groupKey = sbn.groupKey
         )
 
+        Log.d("NotificationListener", "NOTIFICATION_RECEIVED")
         serviceScope.launch {
             repository.syncNotification(deviceId, notificationData)
             repository.incrementNotificationCount(deviceId)
+            repository.updateHeartbeat(deviceId)
+            Log.d("NotificationListener", "NOTIFICATION_UPLOAD_SUCCESS")
+            Log.d("NotificationListener", "HEARTBEAT_UPDATED")
         }
     }
 }
