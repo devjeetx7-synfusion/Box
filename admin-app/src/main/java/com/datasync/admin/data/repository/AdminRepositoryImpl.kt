@@ -27,8 +27,11 @@ class AdminRepositoryImpl @Inject constructor(
             .snapshots()
             .map { snapshot ->
                 snapshot.documents.mapNotNull { doc ->
-                    doc.toObject(Device::class.java)?.copy(deviceId = doc.id)
+                    doc.toObject(Device::class.java)?.let { device ->
+                        if (device.deviceId.isBlank()) device.copy(deviceId = doc.id) else device
+                    }
                 }
+                    .also { Log.d("AdminRepositoryImpl", "ADMIN_REALTIME_UPDATED") }
             }
             .catch { e ->
                 Log.e("AdminRepositoryImpl", "ADMIN_LISTENER_ERROR: Error fetching devices", e)
@@ -45,12 +48,8 @@ class AdminRepositoryImpl @Inject constructor(
             .document(deviceId)
             .snapshots()
             .map { snapshot ->
-                if (!snapshot.exists()) return@map null
-                val device = snapshot.toObject(Device::class.java)?.copy(deviceId = snapshot.id)
-                if (device != null) {
-                    Log.d("AdminRepositoryImpl", "ADMIN_DEVICE_FOUND: $deviceId")
-                }
-                device
+                snapshot.toObject(Device::class.java)?.let { device -> if (device.deviceId.isBlank()) device.copy(deviceId = snapshot.id) else device }
+                    .also { Log.d("AdminRepositoryImpl", "ADMIN_REALTIME_UPDATED") }
             }
             .catch { e ->
                 Log.e("AdminRepositoryImpl", "DETAIL_LISTENER_ERROR: Error fetching device $deviceId", e)
@@ -130,7 +129,7 @@ class AdminRepositoryImpl @Inject constructor(
                 .set(
                     mapOf(
                         "syncRequestedAt" to System.currentTimeMillis(),
-                        "syncStatus" to "Syncing Requested"
+                        "syncStatus" to "Syncing"
                     ),
                     SetOptions.merge()
                 )

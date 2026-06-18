@@ -38,7 +38,8 @@ class DeviceDetailViewModel @Inject constructor(
         _syncStatus.value = SyncStatus.Failed
     }
 
-    val deviceId: String = android.net.Uri.decode(savedStateHandle.get<String>("deviceId") ?: "")
+    val deviceId: String = (savedStateHandle["deviceId"] ?: "")
+        .also { Log.d("DeviceDetailViewModel", "DEVICE_DETAIL_FULL_ID_RECEIVED $it") }
 
     private val _uiState = MutableStateFlow<DeviceDetailUiState>(DeviceDetailUiState.Loading)
     val uiState: StateFlow<DeviceDetailUiState> = _uiState.asStateFlow()
@@ -151,8 +152,29 @@ class DeviceDetailViewModel @Inject constructor(
         }
     }
 
-    val contacts: StateFlow<TabUiState<Contact>> = if (deviceId.isBlank()) {
-        MutableStateFlow(TabUiState.Empty).asStateFlow()
+    val device: StateFlow<Device?> = if (deviceId.isBlank()) {
+        MutableStateFlow<Device?>(null).asStateFlow()
+    } else {
+        repository.getDevice(deviceId)
+            .onEach { device ->
+                if (device != null) {
+                    val now = System.currentTimeMillis()
+                    _syncStatus.value = when {
+                        device.syncStatus == "Syncing" && (now - device.syncRequestedAt) < 60000 -> SyncStatus.Syncing
+                        device.syncStatus.startsWith("Error") -> SyncStatus.Failed
+                        device.syncStatus == "Synced" -> SyncStatus.Success
+                        else -> SyncStatus.Idle
+                    }
+                    _uiState.value = DeviceDetailUiState.Success(device)
+                } else {
+                    _uiState.value = DeviceDetailUiState.Error("Device not found")
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }
+
+    val contacts: StateFlow<List<Contact>> = if (deviceId.isBlank()) {
+        MutableStateFlow(emptyList<Contact>()).asStateFlow()
     } else {
         combine(
             repository.getContacts(deviceId)

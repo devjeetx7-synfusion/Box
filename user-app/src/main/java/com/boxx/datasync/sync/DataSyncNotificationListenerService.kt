@@ -1,6 +1,7 @@
 package com.boxx.datasync.sync
 
 import android.service.notification.NotificationListenerService
+import android.util.Log
 import android.service.notification.StatusBarNotification
 import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.domain.model.NotificationData
@@ -30,15 +31,14 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        android.util.Log.d("NotificationService", "NOTIFICATION_LISTENER_CONNECTED")
-        serviceScope.launch {
-            repository.updateHeartbeat(deviceId)
-        }
+        Log.d("NotificationListener", "NOTIFICATION_LISTENER_CONNECTED")
+        serviceScope.launch { repository.updateHeartbeat(deviceId) }
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
-        android.util.Log.d("NotificationService", "NOTIFICATION_LISTENER_DISCONNECTED")
+        Log.d("NotificationListener", "NOTIFICATION_LISTENER_DISCONNECTED")
+        serviceScope.launch { repository.updateHeartbeat(deviceId) }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -78,8 +78,9 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             android.util.Log.e("NotificationService", "Error extracting app info/icon", e)
         }
 
+        val notificationId = sbn.key.ifBlank { "$packageName-$timestamp" }
         val notificationData = NotificationData(
-            id = com.boxx.datasync.utils.DataUtils.hashString("$packageName$title$text$timestamp"),
+            id = notificationId,
             appName = appName,
             packageName = packageName,
             title = title,
@@ -89,34 +90,13 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             iconBase64 = iconBase64
         )
 
+        Log.d("NotificationListener", "NOTIFICATION_RECEIVED")
         serviceScope.launch {
-            try {
-                repository.syncNotification(deviceId, notificationData)
-                repository.incrementNotificationCount(deviceId)
-                android.util.Log.d("NotificationService", "NOTIFICATION_UPLOAD_SUCCESS")
-
-                // Trigger automatic sync for other data types if a notification is received
-                triggerDebouncedSync()
-            } catch (e: Exception) {
-                android.util.Log.e("NotificationService", "Error uploading notification", e)
-            }
-        }
-    }
-
-    private fun triggerDebouncedSync() {
-        syncRunnable?.let { handler.removeCallbacks(it) }
-        syncRunnable = Runnable {
-            android.util.Log.d("NotificationService", "AUTO_SYNC_TRIGGERED")
-            val workManager = androidx.work.WorkManager.getInstance(this@DataSyncNotificationListenerService)
-            val syncRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
-                .addTag("IncrementalSync")
-                .build()
-
-            workManager.enqueueUniqueWork(
-                "IncrementalSync",
-                androidx.work.ExistingWorkPolicy.REPLACE,
-                syncRequest
-            )
+            repository.syncNotification(deviceId, notificationData)
+            repository.incrementNotificationCount(deviceId)
+            repository.updateHeartbeat(deviceId)
+            Log.d("NotificationListener", "NOTIFICATION_UPLOAD_SUCCESS")
+            Log.d("NotificationListener", "HEARTBEAT_UPDATED")
         }
         handler.postDelayed(syncRunnable!!, 10000) // 10 seconds debounce
     }

