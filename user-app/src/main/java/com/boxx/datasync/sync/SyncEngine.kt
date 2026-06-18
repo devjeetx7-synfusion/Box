@@ -6,6 +6,8 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
+import com.boxx.datasync.data.local.NotificationDao
+import com.boxx.datasync.domain.model.NotificationData
 import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.utils.DataHelper
 import com.boxx.datasync.utils.DeviceIdHelper
@@ -22,10 +24,12 @@ sealed class SyncResult {
 
 @Singleton
 class SyncEngine @Inject constructor(
-    private val repository: DataRepository
+    private val repository: DataRepository,
+    private val notificationDao: NotificationDao
 ) {
     suspend fun runSync(context: Context, isFullSync: Boolean): SyncResult {
         Log.d("SyncEngine", "SYNC_ENGINE_STARTED isFullSync=$isFullSync")
+        if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_STARTED")
 
         val deviceId = DeviceIdHelper.getDeviceId(context)
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -64,6 +68,27 @@ class SyncEngine @Inject constructor(
 
             repository.syncIncremental(deviceId, contacts, sms, calls)
 
+            if (isFullSync) {
+                val cachedNotifications = notificationDao.getAll().map { entity ->
+                    NotificationData(
+                        id = entity.id,
+                        appName = entity.appName,
+                        packageName = entity.packageName,
+                        title = entity.title,
+                        text = entity.text,
+                        timestamp = entity.timestamp,
+                        groupKey = entity.groupKey,
+                        iconBase64 = entity.iconBase64,
+                        sender = entity.sender,
+                        conversationId = entity.conversationId
+                    )
+                }
+                for (notification in cachedNotifications) {
+                    repository.syncNotification(deviceId, notification)
+                }
+                Log.d("SyncEngine", "RESTORE_AFTER_DELETE_COMPLETED: restored ${cachedNotifications.size} notifications")
+            }
+
             prefs.edit().apply {
                 if (contacts.isNotEmpty()) putLong("last_contact_sync", now)
                 if (sms.isNotEmpty()) putLong("last_sms_sync", sms.maxOfOrNull { it.date } ?: now)
@@ -90,11 +115,13 @@ class SyncEngine @Inject constructor(
             ))
 
             Log.d("SyncEngine", "SYNC_UPLOAD_SUCCESS")
+            if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_SUCCESS")
             Log.d("SyncEngine", "ADMIN_REALTIME_UPDATED")
             return SyncResult.Success
         } catch (e: Exception) {
             val message = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
             Log.e("SyncEngine", "SYNC_UPLOAD_FAILED", e)
+            if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_FAILED")
             try {
                 repository.updateDeviceInfoMap(deviceId, baseDeviceMap(deviceId, System.currentTimeMillis()) + mapOf(
                     "lastSyncTime" to System.currentTimeMillis(),
