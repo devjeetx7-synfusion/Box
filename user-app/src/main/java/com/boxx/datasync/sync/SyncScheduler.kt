@@ -1,6 +1,7 @@
 package com.boxx.datasync.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -29,13 +30,14 @@ object SyncScheduler {
     }
 
     fun enqueueIncremental(context: Context) {
+        Log.d("SyncScheduler", "INCREMENTAL_SYNC_ENQUEUED")
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(networkConstraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             EVENT_SYNC_NAME,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.KEEP, // Use KEEP to avoid cancelling running worker, SyncCoordinator handles the rest
             request
         )
     }

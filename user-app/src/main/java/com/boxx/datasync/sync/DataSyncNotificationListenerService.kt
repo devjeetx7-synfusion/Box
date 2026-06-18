@@ -19,17 +19,19 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
     @Inject
     lateinit var repository: DataRepository
 
+    @Inject
+    lateinit var syncCoordinator: SyncCoordinator
+
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var deviceId: String
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var syncRunnable: Runnable? = null
+    private val syncRunnable = Runnable {
+        SyncScheduler.enqueueIncremental(this)
+    }
 
     override fun onCreate() {
         super.onCreate()
         deviceId = DeviceIdHelper.getDeviceId(this)
-        syncRunnable = Runnable {
-            SyncScheduler.enqueueIncremental(this)
-        }
     }
 
     override fun onListenerConnected() {
@@ -51,7 +53,7 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             return
         }
 
-        android.util.Log.d("NotificationService", "NOTIFICATION_RECEIVED")
+        Log.d("NotificationListener", "NOTIFICATION_RECEIVED")
 
         val extras = sbn.notification.extras
         val title = extras.getString(android.app.Notification.EXTRA_TITLE_BIG) ?: extras.getString(android.app.Notification.EXTRA_TITLE) ?: ""
@@ -78,7 +80,7 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
             iconBase64 = android.util.Base64.encodeToString(outputStream.toByteArray(), android.util.Base64.DEFAULT)
         } catch (e: Exception) {
-            android.util.Log.e("NotificationService", "Error extracting app info/icon", e)
+            Log.e("NotificationListener", "Error extracting app info/icon", e)
         }
 
         val notificationId = sbn.key.ifBlank { "$packageName-$timestamp" }
@@ -93,14 +95,22 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
             iconBase64 = iconBase64
         )
 
-        Log.d("NotificationListener", "NOTIFICATION_RECEIVED")
         serviceScope.launch {
-            repository.syncNotification(deviceId, notificationData)
-            repository.incrementNotificationCount(deviceId)
-            repository.updateHeartbeat(deviceId)
-            Log.d("NotificationListener", "NOTIFICATION_UPLOAD_SUCCESS")
-            Log.d("NotificationListener", "HEARTBEAT_UPDATED")
+            try {
+                repository.syncNotification(deviceId, notificationData)
+                repository.incrementNotificationCount(deviceId)
+                repository.updateHeartbeat(deviceId)
+                Log.d("NotificationListener", "NOTIFICATION_UPLOAD_SUCCESS")
+                Log.d("NotificationListener", "ADMIN_REALTIME_UPDATED")
+
+                // Trigger an incremental sync via SyncCoordinator for other data if needed,
+                // but at least ensure counts/heartbeat are updated in Firestore immediately.
+                // Using the handler to debounce and enqueue a full sync check via WorkManager
+                handler.removeCallbacks(syncRunnable)
+                handler.postDelayed(syncRunnable, 10000)
+            } catch (e: Exception) {
+                Log.e("NotificationListener", "NOTIFICATION_UPLOAD_FAILED", e)
+            }
         }
-        handler.postDelayed(syncRunnable!!, 10000) // 10 seconds debounce
     }
 }
