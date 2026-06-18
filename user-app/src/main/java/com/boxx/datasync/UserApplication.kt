@@ -78,8 +78,7 @@ class UserApplication : Application(), Configuration.Provider {
 
     fun setupContentObservers() {
         if (dataContentObserver == null) {
-            val handler = android.os.Handler(android.os.Looper.getMainLooper())
-            dataContentObserver = com.boxx.datasync.sync.DataContentObserver(this, handler)
+            dataContentObserver = com.boxx.datasync.sync.DataContentObserver(this)
         }
 
         val observer = dataContentObserver ?: return

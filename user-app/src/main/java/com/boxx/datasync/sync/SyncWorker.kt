@@ -42,9 +42,9 @@ class SyncWorker @AssistedInject constructor(
                 Log.d("SyncWorker", "WORKER_SYNC_SUCCESS missing permissions handled")
                 return Result.success()
             }
-            val contacts = if (contactsAllowed) DataHelper.fetchContacts(applicationContext, prefs.getLong("last_contact_sync", 0L)) else emptyList()
-            val sms = if (smsAllowed) DataHelper.fetchSMS(applicationContext, prefs.getLong("last_sms_sync", 0L)) else emptyList()
-            val calls = if (callsAllowed) DataHelper.fetchCallLogs(applicationContext, prefs.getLong("last_call_sync", 0L)) else emptyList()
+            val contacts = if (contactsAllowed) DataHelper.fetchContacts(applicationContext, sinceTimestamp = prefs.getLong("last_contact_sync", 0L)) else emptyList()
+            val sms = if (smsAllowed) DataHelper.fetchSMS(applicationContext, sinceTimestamp = prefs.getLong("last_sms_sync", 0L)) else emptyList()
+            val calls = if (callsAllowed) DataHelper.fetchCallLogs(applicationContext, sinceTimestamp = prefs.getLong("last_call_sync", 0L)) else emptyList()
             repository.syncIncremental(deviceId, contacts, sms, calls)
             prefs.edit().apply {
                 if (contacts.isNotEmpty()) putLong("last_contact_sync", now)
