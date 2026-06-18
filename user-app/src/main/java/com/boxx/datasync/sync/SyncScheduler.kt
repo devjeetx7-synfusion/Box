@@ -30,14 +30,14 @@ object SyncScheduler {
     }
 
     fun enqueueIncremental(context: Context) {
-        Log.d("SyncScheduler", "INCREMENTAL_SYNC_ENQUEUED")
+        Log.d("SyncScheduler", "SYNC_TRIGGER_RECEIVED")
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(networkConstraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             EVENT_SYNC_NAME,
-            ExistingWorkPolicy.KEEP, // Use KEEP to avoid cancelling running worker, SyncCoordinator handles the rest
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request
         )
     }

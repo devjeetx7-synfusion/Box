@@ -40,6 +40,7 @@ class UserApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d("UserApplication", "REPO_SCAN_DONE")
         GlobalExceptionHandler.initialize(this)
         FirebaseApp.initializeApp(this)
 

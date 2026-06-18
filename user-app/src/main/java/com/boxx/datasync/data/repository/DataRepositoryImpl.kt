@@ -50,10 +50,16 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
 
     override suspend fun testDeviceWrite(deviceId: String) {
         if (deviceId.isBlank()) error("Missing deviceId")
-        db.collection("devices")
-            .document(deviceId)
-            .set(mapOf("firebaseWriteVerifiedAt" to System.currentTimeMillis()), SetOptions.merge())
-            .await()
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .set(mapOf("firebaseWriteVerifiedAt" to System.currentTimeMillis()), SetOptions.merge())
+                .await()
+            Log.d("DataRepositoryImpl", "SYNC_FIREBASE_TEST_WRITE_SUCCESS")
+        } catch (e: Exception) {
+            Log.e("DataRepositoryImpl", "SYNC_FIREBASE_TEST_WRITE_FAILED", e)
+            throw e
+        }
     }
 
     override suspend fun syncContacts(deviceId: String, contacts: List<Contact>) {
