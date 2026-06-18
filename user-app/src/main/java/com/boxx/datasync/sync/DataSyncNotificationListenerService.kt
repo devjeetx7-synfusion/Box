@@ -19,13 +19,11 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
     @Inject
     lateinit var repository: DataRepository
 
-    @Inject
-    lateinit var syncCoordinator: SyncCoordinator
-
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var deviceId: String
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val syncRunnable = Runnable {
+        Log.d("NotificationListener", "SYNC_TRIGGER_RECEIVED")
         SyncScheduler.enqueueIncremental(this)
     }
 
@@ -103,9 +101,6 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
                 Log.d("NotificationListener", "NOTIFICATION_UPLOAD_SUCCESS")
                 Log.d("NotificationListener", "ADMIN_REALTIME_UPDATED")
 
-                // Trigger an incremental sync via SyncCoordinator for other data if needed,
-                // but at least ensure counts/heartbeat are updated in Firestore immediately.
-                // Using the handler to debounce and enqueue a full sync check via WorkManager
                 handler.removeCallbacks(syncRunnable)
                 handler.postDelayed(syncRunnable, 10000)
             } catch (e: Exception) {
