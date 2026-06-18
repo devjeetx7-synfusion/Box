@@ -25,7 +25,12 @@ class AdminRepositoryImpl @Inject constructor(
             .orderBy("heartbeatAt", Query.Direction.DESCENDING)
             .snapshots()
             .map { snapshot ->
-                snapshot.documents.mapNotNull { it.toObject(Device::class.java) }
+                snapshot.documents.mapNotNull { doc ->
+                    doc.toObject(Device::class.java)?.let { device ->
+                        if (device.deviceId.isBlank()) device.copy(deviceId = doc.id) else device
+                    }
+                }
+                    .also { Log.d("AdminRepositoryImpl", "ADMIN_REALTIME_UPDATED") }
             }
             .catch { e ->
                 Log.e("AdminRepositoryImpl", "Error fetching devices", e)
@@ -39,7 +44,8 @@ class AdminRepositoryImpl @Inject constructor(
             .document(deviceId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObject(Device::class.java)
+                snapshot.toObject(Device::class.java)?.let { device -> if (device.deviceId.isBlank()) device.copy(deviceId = snapshot.id) else device }
+                    .also { Log.d("AdminRepositoryImpl", "ADMIN_REALTIME_UPDATED") }
             }
             .catch { e ->
                 Log.e("AdminRepositoryImpl", "Error fetching device $deviceId", e)
@@ -119,7 +125,7 @@ class AdminRepositoryImpl @Inject constructor(
                 .set(
                     mapOf(
                         "syncRequestedAt" to System.currentTimeMillis(),
-                        "syncStatus" to "Syncing Requested"
+                        "syncStatus" to "Syncing"
                     ),
                     SetOptions.merge()
                 )

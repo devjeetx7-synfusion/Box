@@ -31,7 +31,8 @@ class DeviceDetailViewModel @Inject constructor(
         _syncStatus.value = SyncStatus.Failed
     }
 
-    val deviceId: String = savedStateHandle["deviceId"] ?: ""
+    val deviceId: String = (savedStateHandle["deviceId"] ?: "")
+        .also { Log.d("DeviceDetailViewModel", "DEVICE_DETAIL_FULL_ID_RECEIVED $it") }
 
     private val _uiState = MutableStateFlow<DeviceDetailUiState>(DeviceDetailUiState.Loading)
     val uiState: StateFlow<DeviceDetailUiState> = _uiState.asStateFlow()
@@ -126,7 +127,7 @@ class DeviceDetailViewModel @Inject constructor(
                 if (device != null) {
                     val now = System.currentTimeMillis()
                     _syncStatus.value = when {
-                        device.syncRequestedAt > device.lastSyncTime && (now - device.syncRequestedAt) < 60000 -> SyncStatus.Syncing
+                        device.syncStatus == "Syncing" && (now - device.syncRequestedAt) < 60000 -> SyncStatus.Syncing
                         device.syncStatus.startsWith("Error") -> SyncStatus.Failed
                         device.syncStatus == "Synced" -> SyncStatus.Success
                         else -> SyncStatus.Idle

@@ -6,6 +6,7 @@ import com.boxx.datasync.domain.repository.DataRepository
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -24,7 +25,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         try {
             db.collection("devices")
                 .document(device.deviceId)
-                .set(device)
+                .set(device, SetOptions.merge())
                 .await()
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error updating device info", e)
@@ -32,17 +33,26 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         }
     }
 
-    override suspend fun updateDeviceInfoMap(deviceId: String, updates: Map<String, Any>) {
+    override suspend fun updateDeviceInfoMap(deviceId: String, updates: Map<String, Any?>) {
         if (deviceId.isBlank()) return
         try {
             db.collection("devices")
                 .document(deviceId)
-                .update(updates)
+                .set(updates, SetOptions.merge())
                 .await()
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error updating device info map", e)
             crashlytics.recordException(e)
+            throw e
         }
+    }
+
+    override suspend fun testDeviceWrite(deviceId: String) {
+        if (deviceId.isBlank()) error("Missing deviceId")
+        db.collection("devices")
+            .document(deviceId)
+            .set(mapOf("firebaseWriteVerifiedAt" to System.currentTimeMillis()), SetOptions.merge())
+            .await()
     }
 
     override suspend fun syncContacts(deviceId: String, contacts: List<Contact>) {
@@ -70,6 +80,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error syncing notification", e)
             crashlytics.recordException(e)
+            throw e
         }
     }
 
@@ -133,6 +144,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error syncing $collectionName", e)
             crashlytics.recordException(e)
+            throw e
         }
     }
 
@@ -174,7 +186,7 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         try {
             db.collection("devices")
                 .document(deviceId)
-                .update("notificationCount", FieldValue.increment(1))
+                .set(mapOf("notificationCount" to FieldValue.increment(1), "heartbeatAt" to System.currentTimeMillis()), SetOptions.merge())
                 .await()
         } catch (e: Exception) {
             Log.e("DataRepositoryImpl", "Error incrementing notification count", e)
@@ -186,11 +198,11 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
         try {
             db.collection("devices")
                 .document(deviceId)
-                .update(
+                .set(
                     mapOf(
-                        "heartbeatAt" to System.currentTimeMillis(),
-                        "syncStatus" to "Online"
-                    )
+                        "heartbeatAt" to System.currentTimeMillis()
+                    ),
+                    SetOptions.merge()
                 )
                 .await()
         } catch (e: Exception) {

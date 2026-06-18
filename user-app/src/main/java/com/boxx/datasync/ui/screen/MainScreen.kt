@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.boxx.datasync.ui.viewmodel.MainViewModel
 import com.boxx.datasync.utils.DeviceIdHelper
+import com.boxx.datasync.utils.DataUtils.copyToClipboard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,6 +111,13 @@ fun MainScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
+                OutlinedButton(onClick = {
+                    copyToClipboard(context, "Device ID: $deviceId\nStatus: $syncStatus\nLast Synced: $lastSyncTime\nError: $error")
+                }) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Copy Debug Info")
+                }
             }
 
             Card(

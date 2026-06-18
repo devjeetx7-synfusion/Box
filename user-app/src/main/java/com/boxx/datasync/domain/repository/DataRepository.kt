@@ -4,7 +4,8 @@ import com.boxx.datasync.domain.model.*
 
 interface DataRepository {
     suspend fun updateDeviceInfo(device: Device)
-    suspend fun updateDeviceInfoMap(deviceId: String, updates: Map<String, Any>)
+    suspend fun updateDeviceInfoMap(deviceId: String, updates: Map<String, Any?>)
+    suspend fun testDeviceWrite(deviceId: String)
     suspend fun syncContacts(deviceId: String, contacts: List<Contact>)
     suspend fun syncSMS(deviceId: String, smsList: List<SMS>)
     suspend fun syncCallLogs(deviceId: String, callLogs: List<CallLog>)

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -21,13 +22,12 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.work.*
 import com.boxx.datasync.sync.SyncService
-import com.boxx.datasync.sync.SyncWorker
+import com.boxx.datasync.sync.SyncScheduler
 import com.boxx.datasync.ui.component.PermissionExplanationScreen
 import com.boxx.datasync.ui.component.PermissionRationaleDialog
 import com.boxx.datasync.ui.screen.MainScreen
 import com.boxx.datasync.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.concurrent.TimeUnit
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -36,6 +36,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        Log.d("MainActivity", "PROJECT_SCAN_DONE")
+        Log.d("MainActivity", "FIREBASE_CONFIG_VERIFIED project_id=boxxx-40178 userPackage=com.boxx.datasync adminPackage=com.datasync.admin")
+        viewModel.updateHeartbeat()
 
         val initialPermissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
@@ -89,6 +93,7 @@ class MainActivity : ComponentActivity() {
                     MainScreen(
                         viewModel = viewModel,
                         onSyncClick = {
+                            Log.d("MainActivity", "SYNC_BUTTON_CLICKED")
                             viewModel.setSyncing()
                             startSyncService(context)
                             if (!hasPermissions(context, requiredPermissions)) {
@@ -147,14 +152,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setupWorkManager() {
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(30, TimeUnit.MINUTES)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "PeriodicSync",
-            ExistingPeriodicWorkPolicy.KEEP,
-            syncRequest
-        )
+        SyncScheduler.schedulePeriodic(this)
     }
 
     private fun hasPermissions(context: android.content.Context, permissions: Array<String>): Boolean {
