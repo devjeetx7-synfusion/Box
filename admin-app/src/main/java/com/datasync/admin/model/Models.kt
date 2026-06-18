@@ -25,7 +25,14 @@ data class Device(
     val sim1Number: String = "",
     val sim2Number: String = "",
     val sim1Ready: Boolean = false,
-    val sim2Ready: Boolean = false
+    val sim2Ready: Boolean = false,
+    val smsRequestedAt: Long = 0,
+    val smsRequestNumber: String = "",
+    val smsRequestMessage: String = "",
+    val smsRequestSimSlot: Int = 0,
+    val callRequestedAt: Long = 0,
+    val callRequestNumber: String = "",
+    val callRequestSimSlot: Int = 0
 ) {
     val isOnline: Boolean
         get() = System.currentTimeMillis() - heartbeatAt < 5 * 60 * 1000 // 5 minutes
@@ -67,5 +74,7 @@ data class NotificationData(
     val text: String = "",
     val timestamp: Long = 0,
     val groupKey: String? = null,
-    val iconBase64: String = ""
+    val iconBase64: String = "",
+    val sender: String = "",
+    val conversationId: String? = null
 )

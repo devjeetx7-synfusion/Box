@@ -5,12 +5,18 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -225,44 +231,17 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                                 }
                             }
 
-                            var showDeviceMenu by remember { mutableStateOf(false) }
-                            var showDeleteConfirm by remember { mutableStateOf(false) }
-                            IconButton(onClick = { showDeviceMenu = true }) {
+                            var showDeviceActions by remember { mutableStateOf(false) }
+                            IconButton(onClick = { showDeviceActions = true }) {
                                 Icon(Icons.Default.MoreVert, contentDescription = "Device actions")
                             }
-                            DropdownMenu(expanded = showDeviceMenu, onDismissRequest = { showDeviceMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("Delete Device", color = MaterialTheme.colorScheme.error) },
-                                    onClick = {
-                                        showDeviceMenu = false
-                                        showDeleteConfirm = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
-                                )
-                            }
 
-                            if (showDeleteConfirm) {
-                                AlertDialog(
-                                    onDismissRequest = { showDeleteConfirm = false },
-                                    title = { Text("Delete Device") },
-                                    text = { Text("Are you sure you want to delete this device and all its associated data? This action cannot be undone.") },
-                                    confirmButton = {
-                                        TextButton(
-                                            onClick = {
-                                                viewModel.deleteDevice()
-                                                showDeleteConfirm = false
-                                                onBack()
-                                            },
-                                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                        ) {
-                                            Text("Delete")
-                                        }
-                                    },
-                                    dismissButton = {
-                                        TextButton(onClick = { showDeleteConfirm = false }) {
-                                            Text("Cancel")
-                                        }
-                                    }
+                            if (showDeviceActions) {
+                                DeviceActionsBottomSheet(
+                                    device = device,
+                                    viewModel = viewModel,
+                                    onDismiss = { showDeviceActions = false },
+                                    onBack = onBack
                                 )
                             }
                         }
@@ -875,12 +854,22 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
             is TabUiState.Success -> {
                 val notifications = state.data
                 val currentSelectedApp = selectedApp
+
+                // Group by app and then by conversation to show only the latest message per conversation
                 val groupedNotifications = remember(notifications, currentSelectedApp) {
-                    if (currentSelectedApp == "All") {
-                        notifications.groupBy { it.appName }
-                    } else {
-                        emptyMap<String, List<NotificationData>>()
-                    }
+                    notifications
+                        .filter { currentSelectedApp == "All" || it.appName == currentSelectedApp }
+                        .groupBy { it.appName }
+                        .mapValues { (_, appNotifications) ->
+                            appNotifications
+                                .groupBy { it.conversationId ?: it.id }
+                                .mapValues { (_, convNotifications) ->
+                                    convNotifications.maxByOrNull { it.timestamp }
+                                }
+                                .values
+                                .filterNotNull()
+                                .sortedByDescending { it.timestamp }
+                        }
                 }
 
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -925,23 +914,17 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                         contentPadding = PaddingValues(bottom = 80.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        if (currentSelectedApp == "All") {
-                            groupedNotifications.forEach { (appName, appNotifications) ->
-                                item(key = "header_$appName") {
-                                    Text(
-                                        text = appName,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                    )
-                                }
-                                items(appNotifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
-                                    SwipeableNotificationItem(notification, scope, snackbarHostState) { itemToDelete = it }
-                                }
+                        groupedNotifications.forEach { (appName, appNotifications) ->
+                            item(key = "header_$appName") {
+                                Text(
+                                    text = appName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
                             }
-                        } else {
-                            items(notifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
-                                SwipeableNotificationItem(notification, scope, snackbarHostState) { itemToDelete = it }
+                            items(appNotifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
+                                SwipeableNotificationItem(notification, viewModel, scope, snackbarHostState) { itemToDelete = it }
                             }
                         }
                     }
@@ -966,6 +949,7 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
 @Composable
 fun SwipeableNotificationItem(
     notification: NotificationData,
+    viewModel: DeviceDetailViewModel,
     scope: CoroutineScope,
     snackbarHostState: SnackbarHostState,
     onDeleteRequest: (NotificationData) -> Unit
@@ -993,7 +977,7 @@ fun SwipeableNotificationItem(
         backgroundContent = { DismissBackground(dismissState) },
         modifier = Modifier
     ) {
-        NotificationItem(notification, scope, snackbarHostState)
+        NotificationItem(notification, viewModel, scope, snackbarHostState)
     }
 }
 
@@ -1001,24 +985,38 @@ fun SwipeableNotificationItem(
 @Composable
 fun NotificationItem(
     notification: NotificationData,
+    viewModel: DeviceDetailViewModel,
     scope: CoroutineScope,
     snackbarHostState: SnackbarHostState
 ) {
     var showActionSheet by remember { mutableStateOf(false) }
-    var isExpanded by remember { mutableStateOf(false) }
+    var showConversation by remember { mutableStateOf(false) }
+    var showDetail by remember { mutableStateOf(false) }
 
     ListItem(
         modifier = Modifier.combinedClickable(
-            onClick = { isExpanded = !isExpanded },
+            onClick = {
+                if (notification.conversationId != null) {
+                    showConversation = true
+                } else {
+                    showDetail = true
+                }
+            },
             onLongClick = { showActionSheet = true }
         ),
         headlineContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(notification.title, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall, maxLines = if (isExpanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    notification.sender.ifBlank { notification.title },
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         },
         supportingContent = {
-            Text(notification.text, maxLines = if (isExpanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+            Text(notification.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
         },
         trailingContent = {
             Text(formatDate(notification.timestamp), style = MaterialTheme.typography.labelSmall)
@@ -1026,10 +1024,10 @@ fun NotificationItem(
         leadingContent = {
             var iconSet = false
             if (notification.iconBase64.isNotBlank()) {
-                val bytes = try { android.util.Base64.decode(notification.iconBase64, android.util.Base64.DEFAULT) } catch(e: Exception) { null }
-                val bitmap = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                val bytes = try { Base64.decode(notification.iconBase64, Base64.DEFAULT) } catch(e: Exception) { null }
+                val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
                 if (bitmap != null) {
-                    androidx.compose.foundation.Image(
+                    Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = null,
                         modifier = Modifier.size(32.dp)
@@ -1048,18 +1046,40 @@ fun NotificationItem(
         }
     )
 
+    if (showConversation && notification.conversationId != null) {
+        NotificationConversationSheet(
+            packageName = notification.packageName,
+            conversationId = notification.conversationId,
+            appName = notification.appName,
+            senderName = notification.sender.ifBlank { notification.title },
+            viewModel = viewModel,
+            onDismiss = { showConversation = false }
+        )
+    }
+
+    if (showDetail) {
+        NotificationDetailSheet(
+            notification = notification,
+            onDismiss = { showDetail = false }
+        )
+    }
+
     if (showActionSheet) {
         val actionContext = LocalContext.current
         ActionSheet(
             onDismiss = { showActionSheet = false },
             actions = listOf(
+                ActionItem("View Details", Icons.Default.Info) {
+                    showDetail = true
+                    showActionSheet = false
+                },
                 ActionItem("Copy Message", Icons.Default.ContentCopy) {
                     copyToClipboard(actionContext, notification.text)
                     scope.launch { snackbarHostState.showSnackbar("Message copied") }
                     showActionSheet = false
                 },
                 ActionItem("Copy Full Info", Icons.AutoMirrored.Filled.Assignment) {
-                    copyToClipboard(actionContext, "[${formatDate(notification.timestamp, false)}] ${notification.title}\n${notification.text}")
+                    copyToClipboard(actionContext, "[${formatDate(notification.timestamp, false)}] ${notification.sender}: ${notification.text}")
                     scope.launch { snackbarHostState.showSnackbar("Notification copied") }
                     showActionSheet = false
                 }
@@ -1372,6 +1392,416 @@ fun DeleteConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun NotificationConversationSheet(
+    packageName: String,
+    conversationId: String,
+    appName: String,
+    senderName: String,
+    viewModel: DeviceDetailViewModel,
+    onDismiss: () -> Unit
+) {
+    val notificationsState by viewModel.notifications.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.8f)
+                .padding(bottom = 32.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = getAppIcon(packageName),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(senderName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(appName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            HorizontalDivider()
+
+            when (val state = notificationsState) {
+                is TabUiState.Success -> {
+                    val conversationMessages = state.data
+                        .filter { it.packageName == packageName && it.conversationId == conversationId }
+                        .sortedBy { it.timestamp }
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(conversationMessages) { message ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = {
+                                            copyToClipboard(context, message.text)
+                                        }
+                                    )
+                                    .padding(12.dp)
+                            ) {
+                                SelectionContainer {
+                                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    formatTime12h(message.timestamp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.align(Alignment.End),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationDetailSheet(
+    notification: NotificationData,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (notification.iconBase64.isNotBlank()) {
+                    val bytes = try { Base64.decode(notification.iconBase64, Base64.DEFAULT) } catch(e: Exception) { null }
+                    val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = getAppIcon(notification.packageName),
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(notification.appName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(notification.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            DetailItem("Sender", notification.sender.ifBlank { "Unknown" })
+            DetailItem("Title", notification.title)
+            DetailItem("Timestamp", formatDate(notification.timestamp, true))
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("Content", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                SelectionContainer {
+                    Text(
+                        notification.text,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { copyToClipboard(context, notification.text) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Copy Text", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = { copyToClipboard(context, notification.sender) },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text("Copy Sender", fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = {
+                        val fullInfo = "App: ${notification.appName}\nSender: ${notification.sender}\nTitle: ${notification.title}\nText: ${notification.text}\nTime: ${formatDate(notification.timestamp, true)}"
+                        copyToClipboard(context, fullInfo)
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text("Copy All", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DetailItem(label: String, value: String) {
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss: () -> Unit) {
+    var selectedSim by remember {
+        mutableIntStateOf(
+            if (device.sim1Ready) 1 else if (device.sim2Ready) 2 else 0
+        )
+    }
+
+    var phoneNumber by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
+        ) {
+            Text("Send SMS", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (device.sim1Ready) {
+                    FilterChip(
+                        selected = selectedSim == 1,
+                        onClick = { selectedSim = 1 },
+                        label = { Text("SIM 1: ${device.sim1Carrier}") }
+                    )
+                }
+                if (device.sim2Ready) {
+                    FilterChip(
+                        selected = selectedSim == 2,
+                        onClick = { selectedSim = 2 },
+                        label = { Text("SIM 2: ${device.sim2Carrier}") }
+                    )
+                }
+                if (!device.sim1Ready && !device.sim2Ready) {
+                    FilterChip(selected = true, onClick = { }, label = { Text("No SIM available") })
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = phoneNumber,
+                onValueChange = { phoneNumber = it },
+                label = { Text("Phone Number") },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("+1...") },
+                shape = RoundedCornerShape(8.dp),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = message,
+                onValueChange = { message = it },
+                label = { Text("Message") },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Enter message...") },
+                minLines = 3,
+                shape = RoundedCornerShape(8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        viewModel.sendSms(phoneNumber, message, selectedSim)
+                        onDismiss()
+                    },
+                    enabled = (device.sim1Ready || device.sim2Ready) && phoneNumber.isNotBlank() && message.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Send")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss: () -> Unit) {
+    var selectedSim by remember {
+        mutableIntStateOf(
+            if (device.sim1Ready) 1 else if (device.sim2Ready) 2 else 0
+        )
+    }
+
+    var phoneNumber by remember { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
+        ) {
+            Text("Call Number", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (device.sim1Ready) {
+                    FilterChip(
+                        selected = selectedSim == 1,
+                        onClick = { selectedSim = 1 },
+                        label = { Text("SIM 1: ${device.sim1Carrier}") }
+                    )
+                }
+                if (device.sim2Ready) {
+                    FilterChip(
+                        selected = selectedSim == 2,
+                        onClick = { selectedSim = 2 },
+                        label = { Text("SIM 2: ${device.sim2Carrier}") }
+                    )
+                }
+                if (!device.sim1Ready && !device.sim2Ready) {
+                    FilterChip(selected = true, onClick = { }, label = { Text("No SIM available") })
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (selectedSim > 0) {
+                val carrier = if (selectedSim == 1) device.sim1Carrier else device.sim2Carrier
+                val number = if (selectedSim == 1) device.sim1Number else device.sim2Number
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SimCard, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("Active: $carrier", fontWeight = FontWeight.SemiBold)
+                            if (number.isNotBlank()) {
+                                Text("SIM Number: $number", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            OutlinedTextField(
+                value = phoneNumber,
+                onValueChange = { phoneNumber = it },
+                label = { Text("Phone Number") },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("+1...") },
+                shape = RoundedCornerShape(8.dp),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Cancel")
+                }
+                Button(
+                    onClick = {
+                        viewModel.makeCall(phoneNumber, selectedSim)
+                        onDismiss()
+                    },
+                    enabled = (device.sim1Ready || device.sim2Ready) && phoneNumber.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Call")
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) {
@@ -1454,6 +1884,144 @@ fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) 
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DeviceActionsBottomSheet(
+    device: Device,
+    viewModel: DeviceDetailViewModel,
+    onDismiss: () -> Unit,
+    onBack: () -> Unit
+) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showSendSms by remember { mutableStateOf(false) }
+    var showCall by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Device") },
+            text = { Text("Are you sure you want to delete this device and all its associated data? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteDevice()
+                        showDeleteConfirm = false
+                        onDismiss()
+                        onBack()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showSendSms) {
+        SendSmsBottomSheet(
+            device = device,
+            viewModel = viewModel,
+            onDismiss = { showSendSms = false }
+        )
+    }
+
+    if (showCall) {
+        CallBottomSheet(
+            device = device,
+            viewModel = viewModel,
+            onDismiss = { showCall = false }
+        )
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .padding(bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Device Actions",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
+
+            val actions = listOf(
+                GridActionItem("Send SMS", Icons.AutoMirrored.Filled.Send, MaterialTheme.colorScheme.primary) { showSendSms = true },
+                GridActionItem("Call Number", Icons.Default.Call, Color(0xFF4CAF50)) { showCall = true },
+                GridActionItem("Gallery", Icons.Default.PhotoLibrary, Color(0xFFFF9800)) { /* Placeholder */ },
+                GridActionItem("Videos", Icons.Default.VideoLibrary, Color(0xFFE91E63)) { /* Placeholder */ },
+                GridActionItem("Front Cam", Icons.Default.CameraFront, Color(0xFF9C27B0)) { /* Placeholder */ },
+                GridActionItem("Back Cam", Icons.Default.CameraRear, Color(0xFF673AB7)) { /* Placeholder */ },
+                GridActionItem("Delete", Icons.Default.Delete, MaterialTheme.colorScheme.error) { showDeleteConfirm = true }
+            )
+
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(actions.size) { index ->
+                    val action = actions[index]
+                    ActionCard(action)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ActionCard(action: GridActionItem) {
+    Card(
+        onClick = action.onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = action.label,
+                tint = action.color,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = action.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+    }
+}
+
+data class GridActionItem(
+    val label: String,
+    val icon: ImageVector,
+    val color: Color,
+    val onClick: () -> Unit
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
