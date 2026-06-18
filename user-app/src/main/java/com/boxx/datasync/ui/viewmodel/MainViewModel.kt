@@ -125,6 +125,20 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun testFirebaseConnection() {
+        _isLoading.value = true
+        viewModelScope.launch {
+            try {
+                repository.testDeviceWrite(deviceId)
+                _errorMessage.value = "Firebase Connected Successfully!"
+            } catch (e: Exception) {
+                _errorMessage.value = "Firebase Connection Failed: ${e.localizedMessage}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     private fun formatTime(timestamp: Long): String =
         SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault()).format(Date(timestamp))
 }

@@ -27,6 +27,9 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         deviceId = DeviceIdHelper.getDeviceId(this)
+        syncRunnable = Runnable {
+            SyncScheduler.enqueueIncremental(this)
+        }
     }
 
     override fun onListenerConnected() {

@@ -173,8 +173,8 @@ class DeviceDetailViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     }
 
-    val contacts: StateFlow<List<Contact>> = if (deviceId.isBlank()) {
-        MutableStateFlow(emptyList<Contact>()).asStateFlow()
+    val contacts: StateFlow<TabUiState<Contact>> = if (deviceId.isBlank()) {
+        MutableStateFlow(TabUiState.Empty).asStateFlow()
     } else {
         combine(
             repository.getContacts(deviceId)

