@@ -74,6 +74,13 @@ fun DashboardScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Retry")
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { viewModel.testFirebaseConnection() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                            ) {
+                                Text("Test Firebase Connection")
+                            }
                         }
                     }
                 }
@@ -97,6 +104,13 @@ fun DashboardScreen(
                                     }
                                 }
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { viewModel.testFirebaseConnection() },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                            ) {
+                                Text("Test Firebase Connection")
+                            }
                         }
                     }
                 }
@@ -117,7 +131,10 @@ fun DashboardList(devices: List<Device>, onDeviceClick: (String) -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
-                    .clickable { onDeviceClick(device.deviceId) },
+                    .clickable {
+                        android.util.Log.d("DashboardScreen", "DASHBOARD_FULL_DEVICE_ID: ${device.deviceId}")
+                        onDeviceClick(device.deviceId)
+                    },
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {

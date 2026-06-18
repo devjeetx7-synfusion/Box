@@ -21,6 +21,7 @@ class AdminRepositoryImpl @Inject constructor(
 ) : AdminRepository {
 
     override fun getDevices(): Flow<List<Device>> {
+        Log.d("AdminRepositoryImpl", "ADMIN_LISTENER_STARTED: devices")
         return db.collection("devices")
             .orderBy("heartbeatAt", Query.Direction.DESCENDING)
             .snapshots()
@@ -33,13 +34,16 @@ class AdminRepositoryImpl @Inject constructor(
                     .also { Log.d("AdminRepositoryImpl", "ADMIN_REALTIME_UPDATED") }
             }
             .catch { e ->
-                Log.e("AdminRepositoryImpl", "Error fetching devices", e)
+                Log.e("AdminRepositoryImpl", "ADMIN_LISTENER_ERROR: Error fetching devices", e)
                 emit(emptyList())
             }
             .distinctUntilChanged()
     }
 
     override fun getDevice(deviceId: String): Flow<Device?> {
+        Log.d("AdminRepositoryImpl", "ADMIN_LISTENER_STARTED: getDevice $deviceId")
+        if (deviceId.isBlank()) return kotlinx.coroutines.flow.flowOf(null)
+
         return db.collection("devices")
             .document(deviceId)
             .snapshots()
@@ -48,7 +52,7 @@ class AdminRepositoryImpl @Inject constructor(
                     .also { Log.d("AdminRepositoryImpl", "ADMIN_REALTIME_UPDATED") }
             }
             .catch { e ->
-                Log.e("AdminRepositoryImpl", "Error fetching device $deviceId", e)
+                Log.e("AdminRepositoryImpl", "DETAIL_LISTENER_ERROR: Error fetching device $deviceId", e)
                 emit(null)
             }
             .distinctUntilChanged()

@@ -16,7 +16,14 @@ import javax.inject.Inject
 sealed class DeviceDetailUiState {
     object Loading : DeviceDetailUiState()
     data class Success(val device: Device) : DeviceDetailUiState()
-    data class Error(val message: String) : DeviceDetailUiState()
+    data class Error(val message: String, val lastError: String = "") : DeviceDetailUiState()
+}
+
+sealed class TabUiState<out T> {
+    object Loading : TabUiState<Nothing>()
+    object Empty : TabUiState<Nothing>()
+    data class Success<out T>(val data: List<T>) : TabUiState<T>()
+    data class Error(val message: String) : TabUiState<Nothing>()
 }
 
 @HiltViewModel
@@ -27,7 +34,7 @@ class DeviceDetailViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        Log.e("DeviceDetailViewModel", "Background error", throwable)
+        Log.e("DeviceDetailViewModel", "DETAIL_LISTENER_ERROR: Background error", throwable)
         _syncStatus.value = SyncStatus.Failed
     }
 
@@ -53,11 +60,36 @@ class DeviceDetailViewModel @Inject constructor(
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            kotlinx.coroutines.delay(20000)
-            if (_uiState.value is DeviceDetailUiState.Loading) {
-                _uiState.value = DeviceDetailUiState.Error("Device Detail loading timeout. Make sure the client app is running.")
-            }
+        Log.d("DeviceDetailViewModel", "DETAIL_LISTENER_STARTED: deviceId=$deviceId")
+        Log.d("DeviceDetailViewModel", "DETAIL_DEVICE_PATH: devices/$deviceId")
+
+        loadDevice()
+    }
+
+    private fun loadDevice() {
+        if (deviceId.isBlank()) {
+            _uiState.value = DeviceDetailUiState.Error("Invalid device ID")
+            return
+        }
+
+        viewModelScope.launch(exceptionHandler) {
+            repository.getDevice(deviceId)
+                .collect { device ->
+                    if (device != null) {
+                        Log.d("DeviceDetailViewModel", "DETAIL_DEVICE_FOUND: $deviceId")
+                        val now = System.currentTimeMillis()
+                        _syncStatus.value = when {
+                            device.syncRequestedAt > device.lastSyncTime && (now - device.syncRequestedAt) < 60000 -> SyncStatus.Syncing
+                            device.syncStatus.startsWith("Error") -> SyncStatus.Failed
+                            device.syncStatus == "Synced" -> SyncStatus.Success
+                            else -> SyncStatus.Idle
+                        }
+                        _uiState.value = DeviceDetailUiState.Success(device)
+                    } else {
+                        Log.d("DeviceDetailViewModel", "DETAIL_DEVICE_MISSING: $deviceId")
+                        _uiState.value = DeviceDetailUiState.Error("Device not found")
+                    }
+                }
         }
     }
 
@@ -93,6 +125,7 @@ class DeviceDetailViewModel @Inject constructor(
         if (deviceId.isBlank()) return
         viewModelScope.launch(exceptionHandler) {
             _syncStatus.value = SyncStatus.Syncing
+            android.util.Log.d("Sync", "ADMIN_SYNC_REQUEST_SENT")
             repository.requestSync(deviceId)
         }
     }
@@ -144,56 +177,80 @@ class DeviceDetailViewModel @Inject constructor(
         MutableStateFlow(emptyList<Contact>()).asStateFlow()
     } else {
         combine(
-            repository.getContacts(deviceId),
+            repository.getContacts(deviceId)
+                .onStart { Log.d("DeviceDetailViewModel", "CONTACTS_LISTENER_START") }
+                .onEach { Log.d("DeviceDetailViewModel", "CONTACTS_LISTENER_COUNT: ${it.size}") },
             _searchQuery
         ) { contacts, query ->
-            contacts.filter { it.name.contains(query, true) || it.phone.contains(query) }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            val filtered = contacts.filter { it.name.contains(query, true) || it.phone.contains(query) }
+            if (filtered.isEmpty()) TabUiState.Empty else TabUiState.Success(filtered)
+        }.catch { e ->
+            Log.e("DeviceDetailViewModel", "DETAIL_LISTENER_ERROR: contacts", e)
+            emit(TabUiState.Error(e.message ?: "Failed to load contacts"))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TabUiState.Loading)
     }
 
-    val sms: StateFlow<List<SMS>> = if (deviceId.isBlank()) {
-        MutableStateFlow(emptyList<SMS>()).asStateFlow()
+    val sms: StateFlow<TabUiState<SMS>> = if (deviceId.isBlank()) {
+        MutableStateFlow(TabUiState.Empty).asStateFlow()
     } else {
         combine(
-            repository.getSMS(deviceId),
+            repository.getSMS(deviceId)
+                .onStart { Log.d("DeviceDetailViewModel", "SMS_LISTENER_START") }
+                .onEach { Log.d("DeviceDetailViewModel", "SMS_LISTENER_COUNT: ${it.size}") },
             _searchQuery,
             _smsFilter
         ) { sms, query, filter ->
-            sms.filter {
+            val filtered = sms.filter {
                 (it.address.contains(query, true) || it.body.contains(query, true)) &&
                         (filter == 0 || it.type == filter)
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            if (filtered.isEmpty()) TabUiState.Empty else TabUiState.Success(filtered)
+        }.catch { e ->
+            Log.e("DeviceDetailViewModel", "DETAIL_LISTENER_ERROR: sms", e)
+            emit(TabUiState.Error(e.message ?: "Failed to load sms"))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TabUiState.Loading)
     }
 
-    val callLogs: StateFlow<List<CallLog>> = if (deviceId.isBlank()) {
-        MutableStateFlow(emptyList<CallLog>()).asStateFlow()
+    val callLogs: StateFlow<TabUiState<CallLog>> = if (deviceId.isBlank()) {
+        MutableStateFlow(TabUiState.Empty).asStateFlow()
     } else {
         combine(
-            repository.getCallLogs(deviceId),
+            repository.getCallLogs(deviceId)
+                .onStart { Log.d("DeviceDetailViewModel", "CALLLOGS_LISTENER_START") }
+                .onEach { Log.d("DeviceDetailViewModel", "CALLLOGS_LISTENER_COUNT: ${it.size}") },
             _searchQuery,
             _callFilter
         ) { calls, query, filter ->
-            calls.filter {
+            val filtered = calls.filter {
                 (it.name.contains(query, true) || it.number.contains(query)) &&
                         (filter == 0 || it.type == filter)
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            if (filtered.isEmpty()) TabUiState.Empty else TabUiState.Success(filtered)
+        }.catch { e ->
+            Log.e("DeviceDetailViewModel", "DETAIL_LISTENER_ERROR: calllogs", e)
+            emit(TabUiState.Error(e.message ?: "Failed to load calllogs"))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TabUiState.Loading)
     }
 
-    val notifications: StateFlow<List<NotificationData>> = if (deviceId.isBlank()) {
-        MutableStateFlow(emptyList<NotificationData>()).asStateFlow()
+    val notifications: StateFlow<TabUiState<NotificationData>> = if (deviceId.isBlank()) {
+        MutableStateFlow(TabUiState.Empty).asStateFlow()
     } else {
         combine(
-            repository.getNotifications(deviceId),
+            repository.getNotifications(deviceId)
+                .onStart { Log.d("DeviceDetailViewModel", "NOTIFICATIONS_LISTENER_START") }
+                .onEach { Log.d("DeviceDetailViewModel", "NOTIFICATIONS_LISTENER_COUNT: ${it.size}") },
             _searchQuery,
             _selectedApp
         ) { notifications, query, app ->
-            notifications.filter {
+            val filtered = notifications.filter {
                 (app == "All" || it.appName == app) &&
                         (it.appName.contains(query, true) || it.title.contains(query, true) || it.text.contains(query, true))
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            if (filtered.isEmpty()) TabUiState.Empty else TabUiState.Success(filtered)
+        }.catch { e ->
+            Log.e("DeviceDetailViewModel", "DETAIL_LISTENER_ERROR: notifications", e)
+            emit(TabUiState.Error(e.message ?: "Failed to load notifications"))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TabUiState.Loading)
     }
 
     val appFilters: StateFlow<Map<String, Int>> = if (deviceId.isBlank()) {
