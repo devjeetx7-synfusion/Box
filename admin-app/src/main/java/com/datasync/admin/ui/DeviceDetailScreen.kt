@@ -473,6 +473,7 @@ data class TabItem(val title: String, val icon: ImageVector)
 @Composable
 fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     val contactsState by viewModel.contacts.collectAsStateWithLifecycle()
+    val contacts = (contactsState as? TabUiState.Success<Contact>)?.items ?: emptyList()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -480,68 +481,32 @@ fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     var itemToDelete by remember { mutableStateOf<Contact?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = contactsState) {
-            is TabUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
-            is TabUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            is TabUiState.Empty -> {
-                EmptyState("No contacts found")
-            }
-            is TabUiState.Success -> {
-                val contacts = state.data
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TabHeader(
-                        title = "${contacts.size} Contacts",
-                        onCopyAll = {
-                            val text = contacts.joinToString("\n") { "${it.name}: ${it.phone}" }
-                            copyToClipboard(context, text)
-                            scope.launch { snackbarHostState.showSnackbar("All visible contacts copied") }
-                        },
-                        onDeleteAll = { viewModel.deleteAllVisible("contacts", contacts) }
-                    )
+        Column(modifier = Modifier.fillMaxSize()) {
+            TabHeader(
+                title = "${contacts.size} Contacts",
+                onCopyAll = {
+                    val text = contacts.joinToString("\n") { "${it.name}: ${it.phone}" }
+                    copyToClipboard(context, text)
+                    scope.launch { snackbarHostState.showSnackbar("All visible contacts copied") }
+                },
+                onDeleteAll = { viewModel.deleteAllVisible("contacts", contacts) }
+            )
 
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(contacts, key = { it.id.ifBlank { hashString("${it.name}${it.phone}") } }) { contact ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = {
-                                    when (it) {
-                                        SwipeToDismissBoxValue.StartToEnd -> {
-                                            copyToClipboard(context, "${contact.name}: ${contact.phone}")
-                                            scope.launch { snackbarHostState.showSnackbar("Contact copied") }
-                                            false
-                                        }
-                                        SwipeToDismissBoxValue.EndToStart -> {
-                                            itemToDelete = contact
-                                            false
-                                        }
-                                        else -> false
-                                    }
-                                }
-                            )
-
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                backgroundContent = { DismissBackground(dismissState) },
-                                modifier = Modifier
-                            ) {
-                                ContactItem(
-                                    contact = contact,
-                                    onClick = {
-                                        copyToClipboard(context, contact.phone)
-                                        scope.launch { snackbarHostState.showSnackbar("Number copied") }
-                                    },
-                                    onLongClick = {
+            when {
+                contactsState is TabUiState.Loading -> LoadingState("Loading contacts...")
+                contactsState is TabUiState.Error -> TabErrorState((contactsState as TabUiState.Error).message, (contactsState as TabUiState.Error).trace)
+                contacts.isEmpty() -> EmptyState("No contacts found")
+                else -> {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(contacts, key = { it.id.ifBlank { hashString("${it.name}${it.phone}") } }) { contact ->
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = {
+                                when (it) {
+                                    SwipeToDismissBoxValue.StartToEnd -> {
                                         copyToClipboard(context, "${contact.name}: ${contact.phone}")
                                         scope.launch { snackbarHostState.showSnackbar("Contact copied") }
                                     }
@@ -618,6 +583,7 @@ fun ContactItem(contact: Contact, onClick: () -> Unit, onLongClick: () -> Unit) 
 @Composable
 fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     val messagesState by viewModel.sms.collectAsStateWithLifecycle()
+    val messages = (messagesState as? TabUiState.Success<SMS>)?.items ?: emptyList()
     val filter by viewModel.smsFilter.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -674,41 +640,21 @@ fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                         }
                     )
 
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(messages, key = { it.id.ifBlank { hashString("${it.address}${it.date}${it.body}") } }) { sms ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = {
-                                    when (it) {
-                                        SwipeToDismissBoxValue.StartToEnd -> {
-                                            copyToClipboard(context, sms.body)
-                                            scope.launch { snackbarHostState.showSnackbar("Message copied") }
-                                            false
-                                        }
-                                        SwipeToDismissBoxValue.EndToStart -> {
-                                            itemToDelete = sms
-                                            false
-                                        }
-                                        else -> false
-                                    }
-                                }
-                            )
-
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                backgroundContent = { DismissBackground(dismissState) },
-                                modifier = Modifier
-                            ) {
-                                SmsItem(
-                                    sms = sms,
-                                    onCopyNumber = {
-                                        copyToClipboard(context, sms.address)
-                                        scope.launch { snackbarHostState.showSnackbar("Number copied") }
-                                    },
-                                    onCopyBody = {
+            when {
+                messagesState is TabUiState.Loading -> LoadingState("Loading messages...")
+                messagesState is TabUiState.Error -> TabErrorState((messagesState as TabUiState.Error).message, (messagesState as TabUiState.Error).trace)
+                messages.isEmpty() -> EmptyState("No messages found")
+                else -> {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(messages, key = { it.id.ifBlank { hashString("${it.address}${it.date}${it.body}") } }) { sms ->
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = {
+                                when (it) {
+                                    SwipeToDismissBoxValue.StartToEnd -> {
                                         copyToClipboard(context, sms.body)
                                         scope.launch { snackbarHostState.showSnackbar("Message copied") }
                                     },
@@ -816,6 +762,7 @@ fun SmsItem(
 @Composable
 fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     val notificationsState by viewModel.notifications.collectAsStateWithLifecycle()
+    val notifications = (notificationsState as? TabUiState.Success<NotificationData>)?.items ?: emptyList()
     val appFilters by viewModel.appFilters.collectAsStateWithLifecycle()
     val selectedApp by viewModel.selectedApp.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -883,61 +830,25 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                     }
                 }
 
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TabHeader(
-                        title = "${notifications.size} Notifications",
-                        onCopyAll = {
-                            val text = notifications.joinToString("\n\n") { "[${formatDate(it.timestamp, false)}] ${it.appName} - ${it.title}: ${it.text}" }
-                            copyToClipboard(context, text)
-                            scope.launch { snackbarHostState.showSnackbar("All visible notifications copied") }
-                        },
-                        onDeleteAll = { viewModel.deleteAllVisible("notifications", notifications) },
-                        extraContent = {
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(appFilters.keys.toList()) { app ->
-                                    FilterChip(
-                                        selected = selectedApp == app,
-                                        onClick = { viewModel.selectApp(app) },
-                                        label = {
-                                            Text("$app (${appFilters[app]})")
-                                        },
-                                        leadingIcon = {
-                                            if (app != "All") {
-                                                Icon(
-                                                    imageVector = getAppIcon(app.lowercase()),
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    )
-
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        if (currentSelectedApp == "All") {
-                            groupedNotifications.forEach { (appName, appNotifications) ->
-                                item(key = "header_$appName") {
-                                    Text(
-                                        text = appName,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                                    )
-                                }
-                                items(appNotifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
-                                    SwipeableNotificationItem(notification, scope, snackbarHostState) { itemToDelete = it }
-                                }
+            when {
+                notificationsState is TabUiState.Loading -> LoadingState("Loading notifications...")
+                notificationsState is TabUiState.Error -> TabErrorState((notificationsState as TabUiState.Error).message, (notificationsState as TabUiState.Error).trace)
+                notifications.isEmpty() -> EmptyState("No notifications found")
+                else -> {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    if (currentSelectedApp == "All") {
+                        groupedNotifications.forEach { (appName, appNotifications) ->
+                            item(key = "header_$appName") {
+                                Text(
+                                    text = appName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
                             }
                         } else {
                             items(notifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
@@ -1073,6 +984,7 @@ fun NotificationItem(
 @Composable
 fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     val callsState by viewModel.callLogs.collectAsStateWithLifecycle()
+    val calls = (callsState as? TabUiState.Success<CallLog>)?.items ?: emptyList()
     val filter by viewModel.callFilter.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1086,24 +998,33 @@ fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            }
-            is TabUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            is TabUiState.Empty -> {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TabHeader(
-                        title = "0 Calls",
-                        onCopyAll = { },
-                        onDeleteAll = { },
-                        extraContent = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(selected = filter == 0, onClick = { viewModel.setCallFilter(0) }, label = { Text("All") })
-                                FilterChip(selected = filter == 1, onClick = { viewModel.setCallFilter(1) }, label = { Text("Incoming") })
-                                FilterChip(selected = filter == 2, onClick = { viewModel.setCallFilter(2) }, label = { Text("Outgoing") })
-                                FilterChip(selected = filter == 3, onClick = { viewModel.setCallFilter(3) }, label = { Text("Missed") })
+            )
+
+            when {
+                callsState is TabUiState.Loading -> LoadingState("Loading call logs...")
+                callsState is TabUiState.Error -> TabErrorState((callsState as TabUiState.Error).message, (callsState as TabUiState.Error).trace)
+                calls.isEmpty() -> EmptyState("No call logs found")
+                else -> {
+                LazyColumn(
+                    state = listState,
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(calls, key = { it.id.ifBlank { hashString("${it.number}${it.date}${it.type}") } }) { call ->
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = {
+                                when (it) {
+                                    SwipeToDismissBoxValue.StartToEnd -> {
+                                        copyToClipboard(context, "${call.name} (${call.number}) - ${formatDate(call.date)}")
+                                        scope.launch { snackbarHostState.showSnackbar("Call info copied") }
+                                        false
+                                    }
+                                    SwipeToDismissBoxValue.EndToStart -> {
+                                        itemToDelete = call
+                                        false
+                                    }
+                                    else -> false
+                                }
                             }
                         }
                     )
@@ -1303,6 +1224,35 @@ fun TabHeader(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun LoadingState(message: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun TabErrorState(message: String, trace: String = "") {
+    val context = LocalContext.current
+    Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Error, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.error)
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(message, color = MaterialTheme.colorScheme.error)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(onClick = { copyToClipboard(context, if (trace.isBlank()) message else "$message\n$trace") }) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Copy Debug Info")
+            }
+        }
     }
 }
 

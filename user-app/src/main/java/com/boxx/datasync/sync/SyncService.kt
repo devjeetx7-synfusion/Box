@@ -115,9 +115,9 @@ class SyncService : Service() {
             val lastCallSync = if (isFullSync) 0L else prefs.getLong("last_call_sync", 0L)
             val lastContactSync = if (isFullSync) 0L else prefs.getLong("last_contact_sync", 0L)
 
-            val contacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this, lastContactSync) else emptyList()
-            val sms = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this, lastSmsSync) else emptyList()
-            val calls = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this, lastCallSync) else emptyList()
+            val contacts = if (hasPermission(android.Manifest.permission.READ_CONTACTS)) DataHelper.fetchContacts(this, sinceTimestamp = lastContactSync) else emptyList()
+            val sms = if (hasPermission(android.Manifest.permission.READ_SMS)) DataHelper.fetchSMS(this, sinceTimestamp = lastSmsSync) else emptyList()
+            val calls = if (hasPermission(android.Manifest.permission.READ_CALL_LOG)) DataHelper.fetchCallLogs(this, sinceTimestamp = lastCallSync) else emptyList()
             repository.syncIncremental(deviceId, contacts, sms, calls)
 
             prefs.edit().apply {
