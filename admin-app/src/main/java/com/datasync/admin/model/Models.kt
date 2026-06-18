@@ -32,7 +32,8 @@ data class Device(
     val smsRequestSimSlot: Int = 0,
     val callRequestedAt: Long = 0,
     val callRequestNumber: String = "",
-    val callRequestSimSlot: Int = 0
+    val callRequestSimSlot: Int = 0,
+    val forceFullSyncRequestedAt: Long = 0
 ) {
     val isOnline: Boolean
         get() = System.currentTimeMillis() - heartbeatAt < 5 * 60 * 1000 // 5 minutes

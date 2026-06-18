@@ -210,6 +210,29 @@ class AdminRepositoryImpl @Inject constructor(
                 }
                 batch.commit().await()
             }
+
+            // After deleting all items, request a full sync and reset count
+            val now = System.currentTimeMillis()
+            val countField = when (collection) {
+                "contacts" -> "contactCount"
+                "sms" -> "smsCount"
+                "calllogs" -> "callCount"
+                "notifications" -> "notificationCount"
+                else -> null
+            }
+
+            val updates = mutableMapOf<String, Any>(
+                "forceFullSyncRequestedAt" to now,
+                "syncRequestedAt" to now,
+                "syncStatus" to "Full Sync Requested"
+            )
+            countField?.let { updates[it] = 0 }
+
+            db.collection("devices")
+                .document(deviceId)
+                .set(updates, SetOptions.merge())
+                .await()
+
         } catch (e: Exception) {
             Log.e("AdminRepositoryImpl", "Error deleting all items from $collection", e)
         }

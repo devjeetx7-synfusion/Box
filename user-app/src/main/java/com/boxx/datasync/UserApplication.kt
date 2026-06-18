@@ -169,12 +169,17 @@ class UserApplication : Application(), Configuration.Provider {
 
                 snapshot?.let { doc ->
                     val requestedAt = doc.getLong("syncRequestedAt") ?: 0L
+                    val fullSyncRequestedAt = doc.getLong("forceFullSyncRequestedAt") ?: 0L
                     val lastHandledSyncRequest = prefs.getLong("last_handled_sync_request", 0L)
 
-                    if (requestedAt > lastHandledSyncRequest) {
+                    if (fullSyncRequestedAt > lastHandledSyncRequest) {
+                        Log.d("UserApplication", "ADMIN_FULL_SYNC_REQUEST_RECEIVED")
+                        prefs.edit().putLong("last_handled_sync_request", fullSyncRequestedAt).apply()
+                        triggerSyncService(isFullSync = true)
+                    } else if (requestedAt > lastHandledSyncRequest) {
                         Log.d("UserApplication", "ADMIN_SYNC_REQUEST_RECEIVED")
                         prefs.edit().putLong("last_handled_sync_request", requestedAt).apply()
-                        triggerSyncService()
+                        triggerSyncService(isFullSync = false)
                     }
                 }
             }
@@ -222,8 +227,10 @@ class UserApplication : Application(), Configuration.Provider {
         }
     }
 
-    private fun triggerSyncService() {
-        val intent = Intent(this, SyncService::class.java)
+    private fun triggerSyncService(isFullSync: Boolean = false) {
+        val intent = Intent(this, SyncService::class.java).apply {
+            putExtra(com.boxx.datasync.sync.SyncScheduler.KEY_FULL_SYNC, isFullSync)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
