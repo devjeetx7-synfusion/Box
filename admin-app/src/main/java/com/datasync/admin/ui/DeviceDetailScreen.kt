@@ -11,6 +11,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -492,40 +494,11 @@ fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(contacts, key = { it.id.ifBlank { hashString("${it.name}${it.phone}") } }) { contact ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = {
-                                    when (it) {
-                                        SwipeToDismissBoxValue.StartToEnd -> {
-                                            copyToClipboard(context, "${contact.name}: ${contact.phone}")
-                                            scope.launch { snackbarHostState.showSnackbar("Contact copied") }
-                                            false
-                                        }
-                                        SwipeToDismissBoxValue.EndToStart -> {
-                                            itemToDelete = contact
-                                            false
-                                        }
-                                        else -> false
-                                    }
-                                }
+                            ContactItem(
+                                contact = contact,
+                                viewModel = viewModel,
+                                onDeleteRequest = { itemToDelete = it }
                             )
-
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                backgroundContent = { DismissBackground(dismissState) },
-                                modifier = Modifier
-                            ) {
-                                ContactItem(
-                                    contact = contact,
-                                    onClick = {
-                                        copyToClipboard(context, contact.phone)
-                                        scope.launch { snackbarHostState.showSnackbar("Number copied") }
-                                    },
-                                    onLongClick = {
-                                        copyToClipboard(context, "${contact.name}: ${contact.phone}")
-                                        scope.launch { snackbarHostState.showSnackbar("Contact copied") }
-                                    }
-                                )
-                            }
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
                         }
                     }
@@ -548,12 +521,18 @@ fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ContactItem(contact: Contact, onClick: () -> Unit, onLongClick: () -> Unit) {
+fun ContactItem(
+    contact: Contact,
+    viewModel: DeviceDetailViewModel,
+    onDeleteRequest: (Contact) -> Unit
+) {
     var showActionSheet by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     ListItem(
         modifier = Modifier.combinedClickable(
-            onClick = onClick,
+            onClick = { showActionSheet = true },
             onLongClick = { showActionSheet = true }
         ),
         headlineContent = { Text(contact.name, fontWeight = FontWeight.Bold) },
@@ -580,12 +559,12 @@ fun ContactItem(contact: Contact, onClick: () -> Unit, onLongClick: () -> Unit) 
         ActionSheet(
             onDismiss = { showActionSheet = false },
             actions = listOf(
-                ActionItem("Copy Number", Icons.Default.ContentCopy) {
-                    onClick()
+                ActionItem("Copy Contact", Icons.Default.ContentCopy) {
+                    copyToClipboard(context, "${contact.name}: ${contact.phone}")
                     showActionSheet = false
                 },
-                ActionItem("Copy Full Contact", Icons.AutoMirrored.Filled.Assignment) {
-                    onLongClick()
+                ActionItem("Delete Contact", Icons.Default.Delete) {
+                    onDeleteRequest(contact)
                     showActionSheet = false
                 }
             )
@@ -659,48 +638,11 @@ fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(messages, key = { it.id.ifBlank { hashString("${it.address}${it.date}${it.body}") } }) { sms ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = {
-                                    when (it) {
-                                        SwipeToDismissBoxValue.StartToEnd -> {
-                                            copyToClipboard(context, sms.body)
-                                            scope.launch { snackbarHostState.showSnackbar("Message copied") }
-                                            false
-                                        }
-                                        SwipeToDismissBoxValue.EndToStart -> {
-                                            itemToDelete = sms
-                                            false
-                                        }
-                                        else -> false
-                                    }
-                                }
+                            SmsItem(
+                                sms = sms,
+                                viewModel = viewModel,
+                                onDeleteRequest = { itemToDelete = it }
                             )
-
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                backgroundContent = { DismissBackground(dismissState) },
-                                modifier = Modifier
-                            ) {
-                                SmsItem(
-                                    sms = sms,
-                                    onCopyNumber = {
-                                        copyToClipboard(context, sms.address)
-                                        scope.launch { snackbarHostState.showSnackbar("Number copied") }
-                                    },
-                                    onCopyBody = {
-                                        copyToClipboard(context, sms.body)
-                                        scope.launch { snackbarHostState.showSnackbar("Message copied") }
-                                    },
-                                    onCopyFull = {
-                                        copyToClipboard(context, "[${formatDate(sms.date, false)}] ${sms.address}: ${sms.body}")
-                                        scope.launch { snackbarHostState.showSnackbar("Full SMS copied") }
-                                    },
-                                    onCopyOtp = { otp ->
-                                        copyToClipboard(context, otp)
-                                        scope.launch { snackbarHostState.showSnackbar("OTP $otp copied") }
-                                    }
-                                )
-                            }
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
                         }
                     }
@@ -725,22 +667,21 @@ fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
 @Composable
 fun SmsItem(
     sms: SMS,
-    onCopyNumber: () -> Unit,
-    onCopyBody: () -> Unit,
-    onCopyFull: () -> Unit,
-    onCopyOtp: (String) -> Unit
+    viewModel: DeviceDetailViewModel,
+    onDeleteRequest: (SMS) -> Unit
 ) {
     val otp = remember(sms.body) { extractOtp(sms.body) }
     var showActionSheet by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     ListItem(
         modifier = Modifier.combinedClickable(
-            onClick = onCopyBody,
+            onClick = { showActionSheet = true },
             onLongClick = { showActionSheet = true }
         ),
         headlineContent = {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(sms.address, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { onCopyNumber() })
+                Text(sms.address, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { copyToClipboard(context, sms.address) })
                 Text(formatDate(sms.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
@@ -756,7 +697,7 @@ fun SmsItem(
                     )
                     if (otp != null) {
                         Button(
-                            onClick = { onCopyOtp(otp) },
+                            onClick = { copyToClipboard(context, otp) },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             modifier = Modifier.height(28.dp)
                         ) {
@@ -775,15 +716,15 @@ fun SmsItem(
             onDismiss = { showActionSheet = false },
             actions = listOf(
                 ActionItem("Copy Message", Icons.Default.ContentCopy) {
-                    onCopyBody()
-                    showActionSheet = false
-                },
-                ActionItem("Copy Full Info", Icons.AutoMirrored.Filled.Assignment) {
-                    onCopyFull()
+                    copyToClipboard(context, sms.body)
                     showActionSheet = false
                 },
                 ActionItem("Copy Number", Icons.Default.Phone) {
-                    onCopyNumber()
+                    copyToClipboard(context, sms.address)
+                    showActionSheet = false
+                },
+                ActionItem("Delete Message", Icons.Default.Delete) {
+                    onDeleteRequest(sms)
                     showActionSheet = false
                 }
             )
@@ -855,14 +796,14 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                 val notifications = state.data
                 val currentSelectedApp = selectedApp
 
-                // Group by app and then by conversation to show only the latest message per conversation
+                // Group by app, sender, and conversation to show only the latest message per conversation
                 val groupedNotifications = remember(notifications, currentSelectedApp) {
                     notifications
                         .filter { currentSelectedApp == "All" || it.appName == currentSelectedApp }
                         .groupBy { it.appName }
                         .mapValues { (_, appNotifications) ->
                             appNotifications
-                                .groupBy { it.conversationId ?: it.id }
+                                .groupBy { "${it.packageName}-${it.sender}-${it.conversationId ?: "none"}" }
                                 .mapValues { (_, convNotifications) ->
                                     convNotifications.maxByOrNull { it.timestamp }
                                 }
@@ -924,7 +865,7 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                                 )
                             }
                             items(appNotifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
-                                SwipeableNotificationItem(notification, viewModel, scope, snackbarHostState) { itemToDelete = it }
+                                NotificationItem(notification, viewModel, onDeleteRequest = { itemToDelete = it })
                             }
                         }
                     }
@@ -945,53 +886,18 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SwipeableNotificationItem(
-    notification: NotificationData,
-    viewModel: DeviceDetailViewModel,
-    scope: CoroutineScope,
-    snackbarHostState: SnackbarHostState,
-    onDeleteRequest: (NotificationData) -> Unit
-) {
-    val context = LocalContext.current
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = {
-            when (it) {
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    copyToClipboard(context, "${notification.title}\n${notification.text}")
-                    scope.launch { snackbarHostState.showSnackbar("Notification copied") }
-                    false
-                }
-                SwipeToDismissBoxValue.EndToStart -> {
-                    onDeleteRequest(notification)
-                    false
-                }
-                else -> false
-            }
-        }
-    )
-
-    SwipeToDismissBox(
-        state = dismissState,
-        backgroundContent = { DismissBackground(dismissState) },
-        modifier = Modifier
-    ) {
-        NotificationItem(notification, viewModel, scope, snackbarHostState)
-    }
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NotificationItem(
     notification: NotificationData,
     viewModel: DeviceDetailViewModel,
-    scope: CoroutineScope,
-    snackbarHostState: SnackbarHostState
+    onDeleteRequest: (NotificationData) -> Unit
 ) {
     var showActionSheet by remember { mutableStateOf(false) }
     var showConversation by remember { mutableStateOf(false) }
     var showDetail by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     ListItem(
         modifier = Modifier.combinedClickable(
@@ -1060,27 +966,29 @@ fun NotificationItem(
     if (showDetail) {
         NotificationDetailSheet(
             notification = notification,
+            viewModel = viewModel,
             onDismiss = { showDetail = false }
         )
     }
 
     if (showActionSheet) {
-        val actionContext = LocalContext.current
         ActionSheet(
             onDismiss = { showActionSheet = false },
             actions = listOf(
-                ActionItem("View Details", Icons.Default.Info) {
-                    showDetail = true
+                ActionItem("Copy Notification", Icons.Default.ContentCopy) {
+                    copyToClipboard(context, "${notification.title}\n${notification.text}")
                     showActionSheet = false
                 },
-                ActionItem("Copy Message", Icons.Default.ContentCopy) {
-                    copyToClipboard(actionContext, notification.text)
-                    scope.launch { snackbarHostState.showSnackbar("Message copied") }
+                ActionItem("Copy Sender", Icons.Default.Person) {
+                    copyToClipboard(context, notification.sender.ifBlank { notification.title })
                     showActionSheet = false
                 },
-                ActionItem("Copy Full Info", Icons.AutoMirrored.Filled.Assignment) {
-                    copyToClipboard(actionContext, "[${formatDate(notification.timestamp, false)}] ${notification.sender}: ${notification.text}")
-                    scope.launch { snackbarHostState.showSnackbar("Notification copied") }
+                ActionItem("Copy App Name", Icons.Default.Apps) {
+                    copyToClipboard(context, notification.appName)
+                    showActionSheet = false
+                },
+                ActionItem("Delete Notification", Icons.Default.Delete) {
+                    onDeleteRequest(notification)
                     showActionSheet = false
                 }
             )
@@ -1157,40 +1065,11 @@ fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(calls, key = { it.id.ifBlank { hashString("${it.number}${it.date}${it.type}") } }) { call ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = {
-                                    when (it) {
-                                        SwipeToDismissBoxValue.StartToEnd -> {
-                                            copyToClipboard(context, "${call.name} (${call.number}) - ${formatDate(call.date)}")
-                                            scope.launch { snackbarHostState.showSnackbar("Call info copied") }
-                                            false
-                                        }
-                                        SwipeToDismissBoxValue.EndToStart -> {
-                                            itemToDelete = call
-                                            false
-                                        }
-                                        else -> false
-                                    }
-                                }
+                            CallItem(
+                                call = call,
+                                viewModel = viewModel,
+                                onDeleteRequest = { itemToDelete = it }
                             )
-
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                backgroundContent = { DismissBackground(dismissState) },
-                                modifier = Modifier
-                            ) {
-                                CallItem(
-                                    call = call,
-                                    onCopyNumber = {
-                                        copyToClipboard(context, call.number)
-                                        scope.launch { snackbarHostState.showSnackbar("Number copied") }
-                                    },
-                                    onCopyFull = {
-                                        copyToClipboard(context, "[${formatDate(call.date, false)}] ${call.name} (${call.number}) - ${call.duration}s")
-                                        scope.launch { snackbarHostState.showSnackbar("Call details copied") }
-                                    }
-                                )
-                            }
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
                         }
                     }
@@ -1213,12 +1092,17 @@ fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CallItem(call: CallLog, onCopyNumber: () -> Unit, onCopyFull: () -> Unit) {
+fun CallItem(
+    call: CallLog,
+    viewModel: DeviceDetailViewModel,
+    onDeleteRequest: (CallLog) -> Unit
+) {
     var showActionSheet by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     ListItem(
         modifier = Modifier.combinedClickable(
-            onClick = onCopyNumber,
+            onClick = { showActionSheet = true },
             onLongClick = { showActionSheet = true }
         ),
         headlineContent = { Text(if (call.name == "Unknown" || call.name.isBlank()) call.number else call.name, fontWeight = FontWeight.Bold) },
@@ -1241,12 +1125,16 @@ fun CallItem(call: CallLog, onCopyNumber: () -> Unit, onCopyFull: () -> Unit) {
         ActionSheet(
             onDismiss = { showActionSheet = false },
             actions = listOf(
-                ActionItem("Copy Number", Icons.Default.ContentCopy) {
-                    onCopyNumber()
+                ActionItem("Copy Call Info", Icons.Default.Info) {
+                    copyToClipboard(context, "${call.name} (${call.number}) - ${formatDate(call.date)}")
                     showActionSheet = false
                 },
-                ActionItem("Copy Full Details", Icons.AutoMirrored.Filled.Assignment) {
-                    onCopyFull()
+                ActionItem("Copy Number", Icons.Default.ContentCopy) {
+                    copyToClipboard(context, call.number)
+                    showActionSheet = false
+                },
+                ActionItem("Delete Call Log", Icons.Default.Delete) {
+                    onDeleteRequest(call)
                     showActionSheet = false
                 }
             )
@@ -1337,38 +1225,6 @@ fun EmptyState(message: String) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DismissBackground(dismissState: SwipeToDismissBoxState) {
-    val color = when (dismissState.dismissDirection) {
-        SwipeToDismissBoxValue.StartToEnd -> Color(0xFF4CAF50) // Green for copy
-        SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.error
-        else -> Color.Transparent
-    }
-    val direction = dismissState.dismissDirection
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(color)
-            .padding(horizontal = 20.dp),
-        contentAlignment = when (direction) {
-            SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
-            SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
-            else -> Alignment.Center
-        }
-    ) {
-        Icon(
-            imageVector = when (direction) {
-                SwipeToDismissBoxValue.StartToEnd -> Icons.Default.ContentCopy
-                SwipeToDismissBoxValue.EndToStart -> Icons.Default.Delete
-                else -> Icons.Default.Delete
-            },
-            contentDescription = null,
-            tint = Color.White
-        )
-    }
-}
 
 @Composable
 fun DeleteConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
@@ -1413,9 +1269,8 @@ fun NotificationConversationSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.8f)
-                .padding(bottom = 32.dp)
         ) {
-            // Header
+            // Header (Fixed)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1440,55 +1295,95 @@ fun NotificationConversationSheet(
                     Text(senderName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(appName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                Spacer(modifier = Modifier.weight(1f))
             }
 
             HorizontalDivider()
 
-            when (val state = notificationsState) {
-                is TabUiState.Success -> {
-                    val conversationMessages = state.data
-                        .filter { it.packageName == packageName && it.conversationId == conversationId }
-                        .sortedBy { it.timestamp }
+            // Scrollable Content
+            Box(modifier = Modifier.weight(1f)) {
+                when (val state = notificationsState) {
+                    is TabUiState.Success -> {
+                        val conversationMessages = state.data
+                            .filter { it.packageName == packageName && it.conversationId == conversationId }
+                            .sortedBy { it.timestamp }
 
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(conversationMessages) { message ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .combinedClickable(
-                                        onClick = {},
-                                        onLongClick = {
-                                            copyToClipboard(context, message.text)
-                                        }
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(conversationMessages) { message ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = {
+                                                copyToClipboard(context, message.text)
+                                            }
+                                        )
+                                        .padding(12.dp)
+                                ) {
+                                    SelectionContainer {
+                                        Text(message.text, style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        formatTime12h(message.timestamp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.align(Alignment.End),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    .padding(12.dp)
-                            ) {
-                                SelectionContainer {
-                                    Text(message.text, style = MaterialTheme.typography.bodyMedium)
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    formatTime12h(message.timestamp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.align(Alignment.End),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                         }
                     }
-                }
-                else -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                    else -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
+                }
+            }
+
+            HorizontalDivider()
+
+            // Bottom Actions (Fixed)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val state = notificationsState
+                        if (state is TabUiState.Success) {
+                            val allText = state.data
+                                .filter { it.packageName == packageName && it.conversationId == conversationId }
+                                .sortedBy { it.timestamp }
+                                .joinToString("\n") { "[${formatTime12h(it.timestamp)}] ${it.text}" }
+                            copyToClipboard(context, allText)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Copy All")
+                }
+                OutlinedButton(
+                    onClick = { copyToClipboard(context, senderName) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Copy Sender")
+                }
+                Button(onClick = onDismiss) {
+                    Text("Close")
                 }
             }
         }
@@ -1499,9 +1394,22 @@ fun NotificationConversationSheet(
 @Composable
 fun NotificationDetailSheet(
     notification: NotificationData,
+    viewModel: DeviceDetailViewModel,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirm) {
+        DeleteConfirmationDialog(
+            onConfirm = {
+                viewModel.deleteItem("notifications", notification.id)
+                showDeleteConfirm = false
+                onDismiss()
+            },
+            onDismiss = { showDeleteConfirm = false }
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1510,10 +1418,13 @@ fun NotificationDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
-                .padding(bottom = 32.dp)
+                .fillMaxHeight(0.8f)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Header (Fixed)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(16.dp)
+            ) {
                 if (notification.iconBase64.isNotBlank()) {
                     val bytes = try { Base64.decode(notification.iconBase64, Base64.DEFAULT) } catch(e: Exception) { null }
                     val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
@@ -1539,62 +1450,72 @@ fun NotificationDetailSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
 
-            DetailItem("Sender", notification.sender.ifBlank { "Unknown" })
-            DetailItem("Title", notification.title)
-            DetailItem("Timestamp", formatDate(notification.timestamp, true))
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text("Content", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Surface(
+            // Scrollable content
+            Column(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(8.dp)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                SelectionContainer {
-                    Text(
-                        notification.text,
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                DetailItem("Sender", notification.sender.ifBlank { "Unknown" })
+                DetailItem("Title", notification.title)
+                DetailItem("Timestamp", formatDate(notification.timestamp, true))
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text("Content", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    SelectionContainer {
+                        Text(
+                            notification.text,
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.height(24.dp))
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
 
+            // Fixed Action Row
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .padding(bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = { copyToClipboard(context, notification.text) },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Copy Text", fontSize = 12.sp)
+                IconButton(onClick = { copyToClipboard(context, notification.text) }) {
+                    Icon(Icons.Default.ContentCopy, "Copy Text")
                 }
-                OutlinedButton(
-                    onClick = { copyToClipboard(context, notification.sender) },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("Copy Sender", fontSize = 12.sp)
+                IconButton(onClick = { copyToClipboard(context, notification.sender) }) {
+                    Icon(Icons.Default.Person, "Copy Sender")
                 }
-                OutlinedButton(
-                    onClick = {
-                        val fullInfo = "App: ${notification.appName}\nSender: ${notification.sender}\nTitle: ${notification.title}\nText: ${notification.text}\nTime: ${formatDate(notification.timestamp, true)}"
-                        copyToClipboard(context, fullInfo)
-                    },
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(0.dp)
+                IconButton(onClick = {
+                    val fullInfo = "App: ${notification.appName}\nSender: ${notification.sender}\nTitle: ${notification.title}\nText: ${notification.text}\nTime: ${formatDate(notification.timestamp, true)}"
+                    copyToClipboard(context, fullInfo)
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.Assignment, "Copy All")
+                }
+                IconButton(
+                    onClick = { showDeleteConfirm = true },
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Copy All", fontSize = 12.sp)
+                    Icon(Icons.Default.Delete, "Delete")
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Button(onClick = onDismiss) {
+                    Text("Close")
                 }
             }
         }
@@ -1691,7 +1612,7 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
                         viewModel.sendSms(phoneNumber, message, selectedSim)
                         onDismiss()
                     },
-                    enabled = (device.sim1Ready || device.sim2Ready) && phoneNumber.isNotBlank() && message.isNotBlank(),
+                    enabled = (selectedSim > 0) && phoneNumber.isNotBlank() && message.isNotBlank(),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Send")
@@ -1792,7 +1713,7 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
                         viewModel.makeCall(phoneNumber, selectedSim)
                         onDismiss()
                     },
-                    enabled = (device.sim1Ready || device.sim2Ready) && phoneNumber.isNotBlank(),
+                    enabled = (selectedSim > 0) && phoneNumber.isNotBlank(),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Call")
