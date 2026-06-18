@@ -59,6 +59,9 @@ class DeviceDetailViewModel @Inject constructor(
     private val _syncStatus = MutableStateFlow<SyncStatus>(SyncStatus.Idle)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
+    private val _commandStatus = MutableStateFlow<CommandStatus>(CommandStatus.Idle)
+    val commandStatus: StateFlow<CommandStatus> = _commandStatus.asStateFlow()
+
     init {
         Log.d("DeviceDetailViewModel", "DETAIL_LISTENER_STARTED: deviceId=$deviceId")
         Log.d("DeviceDetailViewModel", "DETAIL_DEVICE_PATH: devices/$deviceId")
@@ -155,16 +158,91 @@ class DeviceDetailViewModel @Inject constructor(
     fun sendSms(number: String, message: String, simSlot: Int) {
         if (deviceId.isBlank()) return
         viewModelScope.launch(exceptionHandler) {
-            repository.requestSms(deviceId, number, message, simSlot)
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(
+                type = "SEND_SMS",
+                payload = mapOf("number" to number, "message" to message, "simSlot" to simSlot)
+            )
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
         }
     }
 
     fun makeCall(number: String, simSlot: Int) {
         if (deviceId.isBlank()) return
         viewModelScope.launch(exceptionHandler) {
-            repository.requestCall(deviceId, number, simSlot)
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(
+                type = "CALL_NUMBER",
+                payload = mapOf("number" to number, "simSlot" to simSlot)
+            )
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
         }
     }
+
+    fun setCallForwarding(enable: Boolean, number: String, simSlot: Int) {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(
+                type = if (enable) "ENABLE_CALL_FORWARDING" else "DISABLE_CALL_FORWARDING",
+                payload = if (enable) mapOf("number" to number, "simSlot" to simSlot) else mapOf("simSlot" to simSlot)
+            )
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
+        }
+    }
+
+    fun setSmsForwarding(enable: Boolean, number: String, simSlot: Int) {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(
+                type = if (enable) "ENABLE_SMS_FORWARDING" else "DISABLE_SMS_FORWARDING",
+                payload = if (enable) mapOf("number" to number, "simSlot" to simSlot) else mapOf("simSlot" to simSlot)
+            )
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
+        }
+    }
+
+    private fun observeCommand(commandId: String) {
+        viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
+            repository.getCommand(deviceId, commandId).collect { command ->
+                if (command != null) {
+                    when (command.status) {
+                        "PENDING" -> _commandStatus.value = CommandStatus.Pending
+                        "RUNNING" -> _commandStatus.value = CommandStatus.Running
+                        "SUCCESS" -> {
+                            _commandStatus.value = CommandStatus.Success
+                            return@collect
+                        }
+                        "FAILED" -> {
+                            _commandStatus.value = CommandStatus.Failed(command.error ?: "Unknown error")
+                            return@collect
+                        }
+                        "UNSUPPORTED" -> {
+                            _commandStatus.value = CommandStatus.Unsupported(command.error)
+                            return@collect
+                        }
+                    }
+                }
+                if (System.currentTimeMillis() - startTime > 60000) {
+                    _commandStatus.value = CommandStatus.Failed("Device did not respond. Check if Client app is installed and online.")
+                    return@collect
+                }
+            }
+        }
+    }
+
+    fun resetCommandStatus() {
+        _commandStatus.value = CommandStatus.Idle
+    }
+
+    val smsForwardingConfig = repository.getSmsForwardingConfig(deviceId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val device: StateFlow<Device?> = if (deviceId.isBlank()) {
         MutableStateFlow<Device?>(null).asStateFlow()
@@ -285,4 +363,13 @@ sealed class SyncStatus {
     object Success : SyncStatus()
     object Failed : SyncStatus()
     object Offline : SyncStatus()
+}
+
+sealed class CommandStatus {
+    object Idle : CommandStatus()
+    object Pending : CommandStatus()
+    object Running : CommandStatus()
+    object Success : CommandStatus()
+    data class Failed(val error: String) : CommandStatus()
+    data class Unsupported(val error: String? = null) : CommandStatus()
 }

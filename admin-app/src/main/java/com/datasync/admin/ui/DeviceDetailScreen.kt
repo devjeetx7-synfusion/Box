@@ -206,6 +206,7 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                                 ForwardingBottomSheet(
                                     title = "Call Forwarding",
                                     device = device,
+                                    viewModel = viewModel,
                                     onDismiss = { showCallForwarding = false }
                                 )
                             }
@@ -213,6 +214,7 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                                 ForwardingBottomSheet(
                                     title = "SMS Forwarding",
                                     device = device,
+                                    viewModel = viewModel,
                                     onDismiss = { showSmsForwarding = false }
                                 )
                             }
@@ -1541,6 +1543,11 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
 
     var phoneNumber by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    val commandStatus by viewModel.commandStatus.collectAsStateWithLifecycle()
+
+    DisposableEffect(Unit) {
+        onDispose { viewModel.resetCommandStatus() }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1553,6 +1560,8 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
         ) {
             Text("Send SMS", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
+
+            CommandStatusBanner(commandStatus)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (device.sim1Ready) {
@@ -1583,6 +1592,7 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("+1...") },
                 shape = RoundedCornerShape(8.dp),
+                enabled = commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone)
             )
 
@@ -1595,7 +1605,8 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Enter message...") },
                 minLines = 3,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(8.dp),
+                enabled = commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -1610,12 +1621,17 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
                 Button(
                     onClick = {
                         viewModel.sendSms(phoneNumber, message, selectedSim)
-                        onDismiss()
                     },
-                    enabled = (selectedSim > 0) && phoneNumber.isNotBlank() && message.isNotBlank(),
+                    enabled = (selectedSim > 0) && phoneNumber.isNotBlank() && message.isNotBlank() &&
+                            commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending &&
+                            commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Send")
+                    if (commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Pending || commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Running) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Send")
+                    }
                 }
             }
         }
@@ -1632,6 +1648,11 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
     }
 
     var phoneNumber by remember { mutableStateOf("") }
+    val commandStatus by viewModel.commandStatus.collectAsStateWithLifecycle()
+
+    DisposableEffect(Unit) {
+        onDispose { viewModel.resetCommandStatus() }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1644,6 +1665,8 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
         ) {
             Text("Call Number", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
+
+            CommandStatusBanner(commandStatus)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (device.sim1Ready) {
@@ -1696,6 +1719,7 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("+1...") },
                 shape = RoundedCornerShape(8.dp),
+                enabled = commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone)
             )
 
@@ -1711,12 +1735,17 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
                 Button(
                     onClick = {
                         viewModel.makeCall(phoneNumber, selectedSim)
-                        onDismiss()
                     },
-                    enabled = (selectedSim > 0) && phoneNumber.isNotBlank(),
+                    enabled = (selectedSim > 0) && phoneNumber.isNotBlank() &&
+                            commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending &&
+                            commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Call")
+                    if (commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Pending || commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Running) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Call")
+                    }
                 }
             }
         }
@@ -1725,7 +1754,7 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) {
+fun ForwardingBottomSheet(title: String, device: Device, viewModel: DeviceDetailViewModel, onDismiss: () -> Unit) {
     var selectedSim by remember {
         mutableIntStateOf(
             if (device.sim1Ready) 1 else if (device.sim2Ready) 2 else 0
@@ -1733,6 +1762,12 @@ fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) 
     }
 
     var forwardingNumber by remember { mutableStateOf("") }
+    val commandStatus by viewModel.commandStatus.collectAsStateWithLifecycle()
+    val smsForwardingConfig by viewModel.smsForwardingConfig.collectAsStateWithLifecycle()
+
+    DisposableEffect(Unit) {
+        onDispose { viewModel.resetCommandStatus() }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1745,6 +1780,8 @@ fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) 
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(16.dp))
+
+            CommandStatusBanner(commandStatus)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (device.sim1Ready) {
@@ -1782,6 +1819,12 @@ fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) 
                         Text("SIM $selectedSim: Active", fontWeight = FontWeight.SemiBold)
                         Text("Carrier: ${carrier.ifBlank { "Unknown" }}", style = MaterialTheme.typography.bodySmall)
                         Text("Number: ${number.ifBlank { "Number unavailable" }}", style = MaterialTheme.typography.bodySmall)
+
+                        if (title.contains("SMS") && smsForwardingConfig?.enabled == true) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Current Forwarding: ${smsForwardingConfig?.destinationNumber}", color = Color(0xFF4CAF50), style = MaterialTheme.typography.labelMedium)
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = forwardingNumber,
@@ -1789,12 +1832,40 @@ fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) 
                             label = { Text("Forwarding number") },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text("+1...") },
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = {}, enabled = false) { Text("Stop") }
-                            Button(onClick = {}, enabled = forwardingNumber.isNotBlank()) { Text("Start Forwarding") }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                            if (commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Pending || commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Running) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    if (title.contains("Call")) {
+                                        viewModel.setCallForwarding(false, "", selectedSim)
+                                    } else {
+                                        viewModel.setSmsForwarding(false, "", selectedSim)
+                                    }
+                                },
+                                enabled = commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running
+                            ) {
+                                Text("Stop")
+                            }
+                            Button(
+                                onClick = {
+                                    if (title.contains("Call")) {
+                                        viewModel.setCallForwarding(true, forwardingNumber, selectedSim)
+                                    } else {
+                                        viewModel.setSmsForwarding(true, forwardingNumber, selectedSim)
+                                    }
+                                },
+                                enabled = forwardingNumber.isNotBlank() && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running
+                            ) {
+                                Text("Start Forwarding")
+                            }
                         }
                     }
                 }
@@ -1802,6 +1873,36 @@ fun ForwardingBottomSheet(title: String, device: Device, onDismiss: () -> Unit) 
 
             Spacer(modifier = Modifier.height(16.dp))
             Text("This is an engineering reference for SIM-based forwarding control.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+        }
+    }
+}
+
+@Composable
+fun CommandStatusBanner(status: com.datasync.admin.ui.viewmodel.CommandStatus) {
+    if (status is com.datasync.admin.ui.viewmodel.CommandStatus.Idle) return
+
+    val (color, text, icon) = when (status) {
+        is com.datasync.admin.ui.viewmodel.CommandStatus.Pending -> Triple(Color(0xFFFFA500), "Sending command...", Icons.Default.CloudUpload)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.Running -> Triple(Color(0xFF2196F3), "Running on device...", Icons.Default.Smartphone)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.Success -> Triple(Color(0xFF4CAF50), "Action successful!", Icons.Default.CheckCircle)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.Failed -> Triple(MaterialTheme.colorScheme.error, status.error, Icons.Default.Error)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.Unsupported -> Triple(Color.Gray, status.error ?: "Action unsupported", Icons.Default.Info)
+        else -> Triple(Color.Gray, "", Icons.Default.Info)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        color = color.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, color.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(text, style = MaterialTheme.typography.bodySmall, color = color, fontWeight = FontWeight.Medium)
         }
     }
 }

@@ -11,8 +11,9 @@ interface AdminRepository {
     fun getCallLogs(deviceId: String): Flow<List<CallLog>>
     fun getNotifications(deviceId: String): Flow<List<NotificationData>>
     suspend fun requestSync(deviceId: String)
-    suspend fun requestSms(deviceId: String, number: String, message: String, simSlot: Int)
-    suspend fun requestCall(deviceId: String, number: String, simSlot: Int)
+    suspend fun sendCommand(deviceId: String, command: Command): String
+    fun getCommand(deviceId: String, commandId: String): Flow<Command?>
+    fun getSmsForwardingConfig(deviceId: String): Flow<SmsForwardingConfig?>
     suspend fun deleteItem(deviceId: String, collection: String, itemId: String)
     suspend fun deleteAllItems(deviceId: String, collection: String)
     suspend fun deleteDevice(deviceId: String)
