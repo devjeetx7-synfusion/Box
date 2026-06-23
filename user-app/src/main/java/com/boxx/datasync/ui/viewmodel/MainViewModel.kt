@@ -40,7 +40,16 @@ class MainViewModel @Inject constructor(
     private val deviceId = DeviceIdHelper.getDeviceId(application)
     private var timeoutJob: Job? = null
 
+    private val _simInfo = MutableStateFlow<Map<String, Any>>(emptyMap())
+    val simInfo: StateFlow<Map<String, Any>> = _simInfo.asStateFlow()
+
     init { observeFirestore() }
+
+    fun saveManualNumber(slotIndex: Int, number: String) {
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(getApplication())
+        prefs.edit().putString("manual_sim_number_${slotIndex + 1}", number).apply()
+        updateHeartbeat()
+    }
 
     private fun observeFirestore() {
         FirebaseFirestore.getInstance().collection("devices").document(deviceId)
@@ -61,6 +70,16 @@ class MainViewModel @Inject constructor(
 
                 val rawStatus = snapshot.getString("syncStatus") ?: "Idle"
                 val lastError = snapshot.getString("lastError")
+
+                val newSimInfo = mutableMapOf<String, Any>()
+                snapshot.getString("sim1Carrier")?.let { newSimInfo["sim1Carrier"] = it }
+                snapshot.getString("sim2Carrier")?.let { newSimInfo["sim2Carrier"] = it }
+                snapshot.getString("sim1Number")?.let { newSimInfo["sim1Number"] = it }
+                snapshot.getString("sim2Number")?.let { newSimInfo["sim2Number"] = it }
+                snapshot.getBoolean("sim1Ready")?.let { newSimInfo["sim1Ready"] = it }
+                snapshot.getBoolean("sim2Ready")?.let { newSimInfo["sim2Ready"] = it }
+                _simInfo.value = newSimInfo
+
                 val lastSync = snapshot.getLong("lastSyncTime") ?: 0L
                 if (lastSync > 0L) _lastSyncTime.value = formatTime(lastSync)
 
