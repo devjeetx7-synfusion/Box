@@ -128,11 +128,14 @@ class PermissionViewModel @Inject constructor(
             // If we already requested and still have denied permissions, OR they are permanently denied
             if (runtimeRequested || permanentlyDenied) {
                 // Check if we should show Restricted Settings Guide first
-                val needsRestrictedGuide = deniedRuntime.any { it.id.startsWith("SMS") || it.id.startsWith("CALL") }
-                if (needsRestrictedGuide && !hasShownRestrictedGuide) {
-                    Log.d("PermissionFlow", "PERMISSION_PIP_GUIDE_SHOWN")
+                // Guide ONLY for SMS/Call permissions that are restricted
+                val restrictedPermissionsMissing = deniedRuntime.filter { it.id.startsWith("SMS") || it.id.startsWith("CALL") }
+
+                if (restrictedPermissionsMissing.isNotEmpty() && !hasShownRestrictedGuide) {
+                    Log.d("PermissionFlow", "RESTRICTED_GUIDE_CONDITION_TRUE")
                     _uiState.value = PermissionUiState.NeedRestrictedSettings
                 } else {
+                    Log.d("PermissionFlow", "RESTRICTED_GUIDE_CONDITION_FALSE")
                     Log.d("PermissionFlow", "PERMISSION_RUNTIME_DENIED")
                     _uiState.value = PermissionUiState.NeedAppSettings
                 }
