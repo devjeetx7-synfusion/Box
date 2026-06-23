@@ -75,7 +75,7 @@ fun MainScreen(
                     Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        "Educational demo — do not use for unauthorized monitoring.",
+                        "This educational demo syncs data only after user-granted permissions.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
