@@ -1,14 +1,26 @@
 package com.boxx.datasync.permission
 
 import android.Manifest
+import android.app.Activity
 import android.app.Application
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import dagger.hilt.android.lifecycle.HiltViewModel
+
+sealed class PermissionUiState {
+    object Checking : PermissionUiState()
+    object RequestRuntimePermissions : PermissionUiState()
+    object NeedNotificationListener : PermissionUiState()
+    object NeedRestrictedSettingsGuide : PermissionUiState()
+    object NeedBatteryOptimization : PermissionUiState()
+    object NeedAppSettings : PermissionUiState()
+    object Ready : PermissionUiState()
+}
 
 @HiltViewModel
 class PermissionViewModel @Inject constructor(
@@ -22,6 +34,12 @@ class PermissionViewModel @Inject constructor(
 
     private val _statuses = MutableStateFlow<Map<String, PermissionStatus>>(emptyMap())
     val statuses: StateFlow<Map<String, PermissionStatus>> = _statuses.asStateFlow()
+
+    private val _uiState = MutableStateFlow<PermissionUiState>(PermissionUiState.Checking)
+    val uiState: StateFlow<PermissionUiState> = _uiState.asStateFlow()
+
+    private var hasShownRestrictedGuide = false
+    private var runtimeRequested = false
 
     init {
         val list = mutableListOf(
@@ -86,9 +104,70 @@ class PermissionViewModel @Inject constructor(
         refreshStatuses()
     }
 
-    fun refreshStatuses() {
+    fun refreshStatuses(activity: Activity? = null, isFromLauncher: Boolean = false) {
+        Log.d("PermissionFlow", "PERMISSION_FLOW_CHECKING")
+        if (isFromLauncher) runtimeRequested = true
         val newStatuses = _permissions.value.associate { it.id to handler.getStatus(it) }
         _statuses.value = newStatuses
+        updateUiState(activity)
+    }
+
+    private fun updateUiState(activity: Activity?) {
+        val currentPermissions = _permissions.value
+        val currentStatuses = _statuses.value
+
+        // 1. Check runtime permissions
+        val runtimePermissions = currentPermissions.filter { !it.isSpecial && it.permission != null }
+        val deniedRuntime = runtimePermissions.filter { (currentStatuses[it.id] ?: PermissionStatus.DENIED) != PermissionStatus.GRANTED }
+
+        if (deniedRuntime.isNotEmpty()) {
+            val permanentlyDenied = activity?.let { act ->
+                deniedRuntime.any { handler.isPermanentlyDenied(act, it) }
+            } ?: false
+
+            // If we already requested and still have denied permissions, OR they are permanently denied
+            if (runtimeRequested || permanentlyDenied) {
+                // Check if we should show Restricted Settings Guide first
+                val needsRestrictedGuide = deniedRuntime.any { it.id.startsWith("SMS") || it.id.startsWith("CALL") }
+                if (needsRestrictedGuide && !hasShownRestrictedGuide) {
+                    Log.d("PermissionFlow", "PERMISSION_RESTRICTED_GUIDE_SHOWN")
+                    _uiState.value = PermissionUiState.NeedRestrictedSettingsGuide
+                } else {
+                    Log.d("PermissionFlow", "PERMISSION_RUNTIME_DENIED")
+                    _uiState.value = PermissionUiState.NeedAppSettings
+                }
+            } else {
+                Log.d("PermissionFlow", "PERMISSION_RUNTIME_REQUEST_STARTED")
+                _uiState.value = PermissionUiState.RequestRuntimePermissions
+            }
+            return
+        }
+
+        Log.d("PermissionFlow", "PERMISSION_RUNTIME_GRANTED")
+
+        // 2. Check Notification Listener
+        val notifListener = currentPermissions.find { it.id == "NOTIFICATION_LISTENER" }
+        if (notifListener != null && (currentStatuses[notifListener.id] ?: PermissionStatus.DENIED) != PermissionStatus.GRANTED) {
+            Log.d("PermissionFlow", "PERMISSION_NOTIFICATION_LISTENER_REQUIRED")
+            _uiState.value = PermissionUiState.NeedNotificationListener
+            return
+        }
+
+        // 3. Check Battery Optimization (Optional)
+        val batteryOpt = currentPermissions.find { it.id == "BATTERY_OPTIMIZATION" }
+        if (batteryOpt != null && (currentStatuses[batteryOpt.id] ?: PermissionStatus.DENIED) != PermissionStatus.GRANTED) {
+            _uiState.value = PermissionUiState.NeedBatteryOptimization
+            return
+        }
+
+        Log.d("PermissionFlow", "PERMISSION_FLOW_READY")
+        _uiState.value = PermissionUiState.Ready
+    }
+
+    fun markRestrictedGuideShown() {
+        hasShownRestrictedGuide = true
+        // Re-evaluate state, will likely move to NeedAppSettings if still denied
+        _uiState.value = PermissionUiState.NeedAppSettings
     }
 
     fun areAllRequiredGranted(): Boolean {
