@@ -92,11 +92,13 @@ class PermissionHandler(private val context: Context) {
                     Intent(Settings.ACTION_SETTINGS)
                 }
             }
-            else -> {
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.fromParts("package", context.packageName, null)
-                }
-            }
+            else -> getAppSettingsIntent()
+        }
+    }
+
+    fun getAppSettingsIntent(): Intent {
+        return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
         }
     }
 }
