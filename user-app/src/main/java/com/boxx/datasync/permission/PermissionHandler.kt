@@ -99,6 +99,7 @@ class PermissionHandler(private val context: Context) {
     fun getAppSettingsIntent(): Intent {
         return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = Uri.fromParts("package", context.packageName, null)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
     }
 }
