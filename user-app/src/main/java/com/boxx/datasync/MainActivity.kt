@@ -13,19 +13,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.permission.PermissionHandler
 import com.boxx.datasync.permission.PermissionStatus
@@ -72,72 +76,13 @@ class MainActivity : ComponentActivity() {
 
                     Log.d("PermissionFlow", "PERMISSION_DIALOG_STACK_PREVENTED - State: $uiState")
 
-                    when (val state = uiState) {
-                        is PermissionUiState.Checking -> {
-                            PermissionLoadingScreen()
-                        }
-                        is PermissionUiState.RequestRuntimePermissions -> {
-                            LaunchedEffect(Unit) {
-                                val runtimePermissions = permissions
-                                    .filter { !it.isSpecial && it.permission != null }
-                                    .filter { handler.getStatus(it) != PermissionStatus.GRANTED }
-                                    .mapNotNull { it.permission }
-                                    .toTypedArray()
-                                if (runtimePermissions.isNotEmpty()) {
-                                    launcher.launch(runtimePermissions)
-                                } else {
-                                    permissionViewModel.refreshStatuses(this@MainActivity)
-                                }
-                            }
-                            PermissionLoadingScreen()
-                        }
-                        is PermissionUiState.NeedNotificationListener -> {
-                            SimplePermissionDialog(
-                                title = "Notification Access Required",
-                                text = "Required to sync incoming notifications to your dashboard.",
-                                onConfirm = {
-                                    Log.d("PermissionFlow", "PERMISSION_NOTIFICATION_LISTENER_OPENED")
-                                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                                }
-                            )
-                        }
-                        is PermissionUiState.NeedRestrictedSettingsGuide -> {
-                            RestrictedSettingsGuide(
-                                onOpenSettings = {
-                                    Log.d("PermissionFlow", "PERMISSION_APP_SETTINGS_OPENED")
-                                    context.startActivity(handler.getAppSettingsIntent())
-                                },
-                                onAlreadyEnabled = {
-                                    permissionViewModel.markRestrictedGuideShown()
-                                }
-                            )
-                        }
-                        is PermissionUiState.NeedBatteryOptimization -> {
-                            SimplePermissionDialog(
-                                title = "Battery Optimization",
-                                text = "Disable optimization to ensure reliable background sync.",
-                                onConfirm = {
-                                    val info = permissions.find { it.id == "BATTERY_OPTIMIZATION" }
-                                    if (info != null) {
-                                        context.startActivity(handler.getSettingsIntent(info))
-                                    }
-                                }
-                            )
-                        }
-                        is PermissionUiState.NeedAppSettings -> {
-                            SimplePermissionDialog(
-                                title = "Permission Required",
-                                text = "Please enable the required permission from Settings to keep sync working.",
-                                onConfirm = {
-                                    Log.d("PermissionFlow", "PERMISSION_APP_SETTINGS_OPENED")
-                                    context.startActivity(handler.getAppSettingsIntent())
-                                }
-                            )
-                        }
-                        is PermissionUiState.Ready -> {
-                            LaunchedEffect(Unit) {
-                                (context.applicationContext as? UserApplication)?.setupContentObservers()
-                            }
+                    val state = uiState
+
+                    if (state is PermissionUiState.Checking) {
+                        PermissionLoadingScreen()
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            // Base UI: MainScreen is always visible except when checking
                             MainScreen(
                                 viewModel = viewModel,
                                 onSyncClick = {
@@ -150,6 +95,75 @@ class MainActivity : ComponentActivity() {
                                     startActivity(intent)
                                 }
                             )
+
+                            // Overlay Permission UI
+                            when (state) {
+                                is PermissionUiState.RequestRuntime -> {
+                                    LaunchedEffect(Unit) {
+                                        val runtimePermissions = permissions
+                                            .filter { !it.isSpecial && it.permission != null }
+                                            .filter { handler.getStatus(it) != PermissionStatus.GRANTED }
+                                            .mapNotNull { it.permission }
+                                            .toTypedArray()
+                                        if (runtimePermissions.isNotEmpty()) {
+                                            launcher.launch(runtimePermissions)
+                                        } else {
+                                            permissionViewModel.refreshStatuses(this@MainActivity)
+                                        }
+                                    }
+                                }
+                                is PermissionUiState.NeedNotificationListener -> {
+                                    SimplePermissionDialog(
+                                        title = "Notification Access Required",
+                                        text = "Required to sync incoming notifications to your dashboard.",
+                                        onConfirm = {
+                                            Log.d("PermissionFlow", "PERMISSION_SETTINGS_OPENED - Notification Listener")
+                                            context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                        }
+                                    )
+                                }
+                                is PermissionUiState.NeedRestrictedSettings -> {
+                                    PipRestrictedGuide(
+                                        onOpenSettings = {
+                                            Log.d("PermissionFlow", "PERMISSION_SETTINGS_OPENED - App Details")
+                                            context.startActivity(handler.getAppSettingsIntent())
+                                        },
+                                        onDone = {
+                                            permissionViewModel.markRestrictedGuideShown()
+                                        }
+                                    )
+                                }
+                                is PermissionUiState.NeedBatteryOptimization -> {
+                                    SimplePermissionDialog(
+                                        title = "Battery Optimization",
+                                        text = "Disable optimization to ensure reliable background sync.",
+                                        onConfirm = {
+                                            Log.d("PermissionFlow", "PERMISSION_SETTINGS_OPENED - Battery Optimization")
+                                            val info = permissions.find { it.id == "BATTERY_OPTIMIZATION" }
+                                            if (info != null) {
+                                                context.startActivity(handler.getSettingsIntent(info))
+                                            }
+                                        }
+                                    )
+                                }
+                                is PermissionUiState.NeedAppSettings -> {
+                                    SimplePermissionDialog(
+                                        title = "Permission Required",
+                                        text = "Please enable the required permission from Settings to keep sync working.",
+                                        onConfirm = {
+                                            Log.d("PermissionFlow", "PERMISSION_SETTINGS_OPENED - App Details")
+                                            context.startActivity(handler.getAppSettingsIntent())
+                                        }
+                                    )
+                                }
+                                is PermissionUiState.Ready -> {
+                                    LaunchedEffect(Unit) {
+                                        (context.applicationContext as? UserApplication)?.setupContentObservers()
+                                        permissionViewModel.refreshStatuses(this@MainActivity) // Final check
+                                    }
+                                }
+                                else -> {}
+                            }
                         }
                     }
                 }
@@ -217,66 +231,92 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
-    private fun RestrictedSettingsGuide(onOpenSettings: () -> Unit, onAlreadyEnabled: () -> Unit) {
-        ModalBottomSheet(
-            onDismissRequest = { /* Prevent dismissal by clicking outside if required, or just allow it */ },
-            dragHandle = { BottomSheetDefaults.DragHandle() }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-                    .padding(bottom = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text("Restricted Permission Required", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    "Your phone may block SMS/Call permissions until restricted settings are allowed.",
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+    private fun PipRestrictedGuide(onOpenSettings: () -> Unit, onDone: () -> Unit) {
+        var offsetX by remember { mutableStateOf(0f) }
+        var offsetY by remember { mutableStateOf(0f) }
 
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            Card(
+                modifier = Modifier
+                    .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+                    .width(280.dp)
+                    .align(Alignment.TopCenter)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            offsetX += dragAmount.x
+                            offsetY += dragAmount.y
+                        }
+                    },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp)).padding(16.dp),
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("1. Open App Info", style = MaterialTheme.typography.bodySmall)
-                    Text("2. Tap three dots / More options", style = MaterialTheme.typography.bodySmall)
-                    Text("3. Tap “Allow restricted settings”", style = MaterialTheme.typography.bodySmall)
-                    Text("4. Return and enable SMS/Call permissions", style = MaterialTheme.typography.bodySmall)
-                }
-
-                // Small Illustration
-                Box(
-                    modifier = Modifier
-                        .size(140.dp, 90.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                ) {
-                    Column(modifier = Modifier.align(Alignment.TopEnd)) {
-                        repeat(3) {
-                            Box(modifier = Modifier.size(5.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                            Spacer(modifier = Modifier.height(3.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Restricted Setting Guide",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = onDone, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
                         }
                     }
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp))
-                            .padding(4.dp)
-                    ) {
-                        Text("Allow restricted settings", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    }
-                }
 
-                Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                    Text("Open App Info")
-                }
-                TextButton(onClick = onAlreadyEnabled, modifier = Modifier.fillMaxWidth()) {
-                    Text("I Already Enabled It")
+                    Text(
+                        "SMS/Call permission may be restricted. Tap Open Settings, then enable Allow restricted settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Start
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("1. Open App Info", style = MaterialTheme.typography.labelSmall)
+                        Text("2. Tap three dots (⋮)", style = MaterialTheme.typography.labelSmall)
+                        Text("3. Allow restricted settings", style = MaterialTheme.typography.labelSmall)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Open Settings", style = MaterialTheme.typography.labelLarge)
+                        }
+                        Button(
+                            onClick = onDone,
+                            modifier = Modifier.weight(0.6f),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Done", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
             }
         }

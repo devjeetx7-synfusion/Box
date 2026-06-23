@@ -14,9 +14,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 
 sealed class PermissionUiState {
     object Checking : PermissionUiState()
-    object RequestRuntimePermissions : PermissionUiState()
+    object RequestRuntime : PermissionUiState()
     object NeedNotificationListener : PermissionUiState()
-    object NeedRestrictedSettingsGuide : PermissionUiState()
+    object NeedRestrictedSettings : PermissionUiState()
     object NeedBatteryOptimization : PermissionUiState()
     object NeedAppSettings : PermissionUiState()
     object Ready : PermissionUiState()
@@ -130,15 +130,15 @@ class PermissionViewModel @Inject constructor(
                 // Check if we should show Restricted Settings Guide first
                 val needsRestrictedGuide = deniedRuntime.any { it.id.startsWith("SMS") || it.id.startsWith("CALL") }
                 if (needsRestrictedGuide && !hasShownRestrictedGuide) {
-                    Log.d("PermissionFlow", "PERMISSION_RESTRICTED_GUIDE_SHOWN")
-                    _uiState.value = PermissionUiState.NeedRestrictedSettingsGuide
+                    Log.d("PermissionFlow", "PERMISSION_PIP_GUIDE_SHOWN")
+                    _uiState.value = PermissionUiState.NeedRestrictedSettings
                 } else {
                     Log.d("PermissionFlow", "PERMISSION_RUNTIME_DENIED")
                     _uiState.value = PermissionUiState.NeedAppSettings
                 }
             } else {
                 Log.d("PermissionFlow", "PERMISSION_RUNTIME_REQUEST_STARTED")
-                _uiState.value = PermissionUiState.RequestRuntimePermissions
+                _uiState.value = PermissionUiState.RequestRuntime
             }
             return
         }
@@ -148,7 +148,7 @@ class PermissionViewModel @Inject constructor(
         // 2. Check Notification Listener
         val notifListener = currentPermissions.find { it.id == "NOTIFICATION_LISTENER" }
         if (notifListener != null && (currentStatuses[notifListener.id] ?: PermissionStatus.DENIED) != PermissionStatus.GRANTED) {
-            Log.d("PermissionFlow", "PERMISSION_NOTIFICATION_LISTENER_REQUIRED")
+            Log.d("PermissionFlow", "PERMISSION_SPECIAL_SETTING_REQUIRED - Notification Listener")
             _uiState.value = PermissionUiState.NeedNotificationListener
             return
         }
@@ -156,6 +156,7 @@ class PermissionViewModel @Inject constructor(
         // 3. Check Battery Optimization (Optional)
         val batteryOpt = currentPermissions.find { it.id == "BATTERY_OPTIMIZATION" }
         if (batteryOpt != null && (currentStatuses[batteryOpt.id] ?: PermissionStatus.DENIED) != PermissionStatus.GRANTED) {
+            Log.d("PermissionFlow", "PERMISSION_SPECIAL_SETTING_REQUIRED - Battery Optimization")
             _uiState.value = PermissionUiState.NeedBatteryOptimization
             return
         }
