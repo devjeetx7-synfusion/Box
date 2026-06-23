@@ -3,8 +3,11 @@ package com.boxx.datasync.ui.screen
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -32,10 +35,13 @@ fun MainScreen(
     val lastSyncTime by viewModel.lastSyncTime.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    val simInfo by viewModel.simInfo.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var showSimEditDialog by remember { mutableStateOf<Int?>(null) } // 0 for SIM 1, 1 for SIM 2
+
+    LaunchedEffect(Unit) {
+        Log.d("MainScreen", "CLIENT_UI_SIM_CARD_REMOVED")
+        Log.d("MainScreen", "CLIENT_UI_SCROLL_ENABLED")
+    }
 
     Scaffold(
         topBar = {
@@ -59,7 +65,9 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp)
+                .padding(bottom = 32.dp), // Extra bottom padding for navigation bar
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
@@ -132,50 +140,6 @@ fun MainScreen(
                 }
             }
 
-            // SIM Information Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.SimCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("SIM Information", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    }
-
-                    SimInfoRow(
-                        slotIndex = 0,
-                        ready = simInfo["sim1Ready"] as? Boolean ?: false,
-                        carrier = simInfo["sim1Carrier"] as? String ?: "No SIM available",
-                        number = simInfo["sim1Number"] as? String ?: "Number not provided by carrier",
-                        onEdit = { showSimEditDialog = 0 }
-                    )
-
-                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-
-                    SimInfoRow(
-                        slotIndex = 1,
-                        ready = simInfo["sim2Ready"] as? Boolean ?: false,
-                        carrier = simInfo["sim2Carrier"] as? String ?: "No SIM available",
-                        number = simInfo["sim2Number"] as? String ?: "Number not provided by carrier",
-                        onEdit = { showSimEditDialog = 1 }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Button(
-                onClick = { viewModel.testFirebaseConnection() },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-            ) {
-                Text("Test Firebase Connection")
-            }
-
             Button(
                 onClick = onSyncClick,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -185,51 +149,16 @@ fun MainScreen(
                 Text("Sync Now", fontSize = 18.sp)
             }
 
-            TextButton(
-                onClick = { showDeleteConfirm = true },
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Delete Synced Data")
-            }
-        }
-
-        if (showSimEditDialog != null) {
-            var tempNumber by remember {
-                mutableStateOf(
-                    (if (showSimEditDialog == 0) simInfo["sim1Number"] else simInfo["sim2Number"]) as? String ?: ""
-                )
-            }
-            if (tempNumber == "Number not provided by carrier") tempNumber = ""
-
-            AlertDialog(
-                onDismissRequest = { showSimEditDialog = null },
-                title = { Text("Edit SIM ${showSimEditDialog!! + 1} Number") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Manually enter your phone number if the carrier does not provide it automatically.")
-                        OutlinedTextField(
-                            value = tempNumber,
-                            onValueChange = { tempNumber = it },
-                            label = { Text("Phone Number") },
-                            placeholder = { Text("+1...") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone)
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = {
-                        viewModel.saveManualNumber(showSimEditDialog!!, tempNumber)
-                        showSimEditDialog = null
-                    }) { Text("Save") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showSimEditDialog = null }) { Text("Cancel") }
+            if (lastSyncTime != "Never") {
+                TextButton(
+                    onClick = { showDeleteConfirm = true },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Delete Synced Data")
                 }
-            )
+            }
         }
 
         if (showDeleteConfirm) {
@@ -262,21 +191,3 @@ fun InfoRow(label: String, value: String) {
     }
 }
 
-@Composable
-fun SimInfoRow(slotIndex: Int, ready: Boolean, carrier: String, number: String, onEdit: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("SIM ${slotIndex + 1}: $carrier", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                text = if (ready) number else "Not Available",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (number == "Number not provided by carrier") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (ready) {
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit SIM Number", modifier = Modifier.size(20.dp))
-            }
-        }
-    }
-}

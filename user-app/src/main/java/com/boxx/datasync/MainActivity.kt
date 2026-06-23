@@ -74,9 +74,10 @@ class MainActivity : ComponentActivity() {
                         permissionViewModel.refreshStatuses(this@MainActivity, isFromLauncher = true)
                     }
 
-                    Log.d("PermissionFlow", "PERMISSION_DIALOG_STACK_PREVENTED - State: $uiState")
-
                     val state = uiState
+                    if (state !is PermissionUiState.Checking) {
+                        Log.d("PermissionFlow", "PERMISSION_UI_STACK_PREVENTED")
+                    }
 
                     if (state is PermissionUiState.Checking) {
                         PermissionLoadingScreen()
@@ -123,12 +124,16 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 is PermissionUiState.NeedRestrictedSettings -> {
+                                    LaunchedEffect(Unit) {
+                                        Log.d("PermissionFlow", "RESTRICTED_GUIDE_SHOWN")
+                                    }
                                     PipRestrictedGuide(
                                         onOpenSettings = {
                                             Log.d("PermissionFlow", "PERMISSION_SETTINGS_OPENED - App Details")
                                             context.startActivity(handler.getAppSettingsIntent())
                                         },
                                         onDone = {
+                                            Log.d("PermissionFlow", "RESTRICTED_GUIDE_DISMISSED")
                                             permissionViewModel.markRestrictedGuideShown()
                                         }
                                     )
@@ -158,6 +163,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 is PermissionUiState.Ready -> {
                                     LaunchedEffect(Unit) {
+                                        Log.d("PermissionFlow", "PERMISSION_FLOW_READY")
                                         (context.applicationContext as? UserApplication)?.setupContentObservers()
                                         permissionViewModel.refreshStatuses(this@MainActivity) // Final check
                                     }
@@ -278,7 +284,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Text(
-                        "SMS/Call permission may be restricted. Tap Open Settings, then enable Allow restricted settings.",
+                        "SMS/Call permission may be restricted. Open App Info and enable Allow restricted settings only if SMS/Call permissions cannot be granted normally.",
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Start
                     )
