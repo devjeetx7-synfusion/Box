@@ -149,6 +149,33 @@ class MainActivity : ComponentActivity() {
             }
         }
         setupWorkManager()
+        checkBatteryOptimization()
+    }
+
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val packageName = packageName
+            val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                // Show a dialog to the user
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Background Sync Restriction")
+                    .setMessage("Android is restricting background execution for this app. For reliable real-time sync, please disable battery optimization for Data Sync.")
+                    .setPositiveButton("Settings") { _, _ ->
+                        val i = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        try {
+                            startActivity(i)
+                        } catch (e: Exception) {
+                            val i2 = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            startActivity(i2)
+                        }
+                    }
+                    .setNegativeButton("Later", null)
+                    .show()
+            }
+        }
     }
 
     private fun setupWorkManager() {

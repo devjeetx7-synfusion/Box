@@ -26,7 +26,7 @@ object DataHelper {
         cursor?.use {
             while (it.moveToNext()) {
                 val name = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)) ?: "Unknown"
-                var phone = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)) ?: "Unknown"
+                var phone = it.getString(it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER))?.takeIf { it.isNotBlank() } ?: "Number unavailable"
 
                 if (maskData) {
                     phone = maskPhoneNumber(phone)
@@ -51,7 +51,7 @@ object DataHelper {
         )
         cursor?.use {
             while (it.moveToNext()) {
-                var address = it.getString(it.getColumnIndex(Telephony.Sms.ADDRESS)) ?: ""
+                var address = it.getString(it.getColumnIndex(Telephony.Sms.ADDRESS))?.takeIf { it.isNotBlank() } ?: "Number unavailable"
                 var body = it.getString(it.getColumnIndex(Telephony.Sms.BODY)) ?: ""
                 val date = it.getLong(it.getColumnIndex(Telephony.Sms.DATE))
                 val type = it.getInt(it.getColumnIndex(Telephony.Sms.TYPE))
@@ -80,7 +80,7 @@ object DataHelper {
         )
         cursor?.use {
             while (it.moveToNext()) {
-                var number = it.getString(it.getColumnIndex(CallLog.Calls.NUMBER)) ?: ""
+                var number = it.getString(it.getColumnIndex(CallLog.Calls.NUMBER))?.takeIf { it.isNotBlank() } ?: "Number unavailable"
                 val name = it.getString(it.getColumnIndex(CallLog.Calls.CACHED_NAME)) ?: "Unknown"
                 val type = it.getInt(it.getColumnIndex(CallLog.Calls.TYPE))
                 val date = it.getLong(it.getColumnIndex(CallLog.Calls.DATE))

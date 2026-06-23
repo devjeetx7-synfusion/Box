@@ -51,6 +51,36 @@ class CommandProcessor @Inject constructor(
     private fun processCommand(deviceId: String, command: Command, context: Context) {
         scope.launch {
             try {
+                val requiresConfirmation = command.type.contains("FORWARDING")
+                if (requiresConfirmation) {
+                    updateCommandStatus(deviceId, command.id, "WAITING_FOR_USER_CONFIRMATION")
+                    Log.d("CommandProcessor", "CLIENT_COMMAND_WAITING_FOR_CONFIRMATION: ${command.type}")
+
+                    val intent = android.content.Intent(context, com.boxx.datasync.ui.CommandConfirmationActivity::class.java).apply {
+                        putExtra("deviceId", deviceId)
+                        putExtra("commandId", command.id)
+                        putExtra("commandType", command.type)
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+
+                    // Wait for user response
+                    var userResponse: String? = null
+                    val startTime = System.currentTimeMillis()
+                    while (userResponse == null && System.currentTimeMillis() - startTime < 60000) {
+                        val doc = db.collection("devices").document(deviceId)
+                            .collection("commands").document(command.id).get().await()
+                        userResponse = doc.getString("userResponse")
+                        if (userResponse == null) kotlinx.coroutines.delay(2000)
+                    }
+
+                    if (userResponse != "CONFIRMED") {
+                        updateCommandStatus(deviceId, command.id, "FAILED", completedAt = System.currentTimeMillis(), error = "User denied or timeout")
+                        Log.d("CommandProcessor", "CLIENT_COMMAND_FAILED: ${command.type} User denied")
+                        return@launch
+                    }
+                }
+
                 updateCommandStatus(deviceId, command.id, "RUNNING", startedAt = System.currentTimeMillis())
                 Log.d("CommandProcessor", "CLIENT_COMMAND_RUNNING: ${command.type}")
 
@@ -83,8 +113,8 @@ class CommandProcessor @Inject constructor(
             "CALL_NUMBER" -> handleCallNumber(command, context)
             "ENABLE_CALL_FORWARDING" -> handleCallForwarding(command, context, true)
             "DISABLE_CALL_FORWARDING" -> handleCallForwarding(command, context, false)
-            "ENABLE_SMS_FORWARDING" -> handleSmsForwarding(deviceId = DeviceIdHelper.getDeviceId(context), command, true)
-            "DISABLE_SMS_FORWARDING" -> handleSmsForwarding(deviceId = DeviceIdHelper.getDeviceId(context), command, false)
+            "ENABLE_SMS_FORWARDING" -> handleSmsForwarding(context, deviceId = DeviceIdHelper.getDeviceId(context), command, true)
+            "DISABLE_SMS_FORWARDING" -> handleSmsForwarding(context, deviceId = DeviceIdHelper.getDeviceId(context), command, false)
             else -> CommandResult.Unsupported("Unknown command type: ${command.type}")
         }
     }
@@ -153,6 +183,7 @@ class CommandProcessor @Inject constructor(
     }
 
     private fun handleCallForwarding(command: Command, context: Context, enable: Boolean): CommandResult {
+        Log.d("CommandProcessor", "CALL_FORWARDING_STARTED: enable=$enable")
         val number = command.payload["number"] as? String
         if (enable && number.isNullOrBlank()) return CommandResult.Failed("Missing forwarding number")
         val simSlot = (command.payload["simSlot"] as? Number)?.toInt() ?: 1
@@ -177,16 +208,27 @@ class CommandProcessor @Inject constructor(
             }
 
             context.startActivity(intent)
-            if (hasCallPermission) CommandResult.Success else CommandResult.Unsupported("Direct MMI execution restricted. Opened dialer.")
+            val result = if (hasCallPermission) CommandResult.Success else CommandResult.Unsupported("Direct MMI execution restricted. Opened dialer.")
+            Log.d("CommandProcessor", "CALL_FORWARDING_RESULT: $result")
+            result
         } catch (e: Exception) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_RESULT: Failed", e)
             CommandResult.Failed(e.localizedMessage ?: "Failed to execute MMI code")
         }
     }
 
-    private suspend fun handleSmsForwarding(deviceId: String, command: Command, enable: Boolean): CommandResult {
+    private suspend fun handleSmsForwarding(context: Context, deviceId: String, command: Command, enable: Boolean): CommandResult {
         val number = command.payload["number"] as? String
         if (enable && number.isNullOrBlank()) return CommandResult.Failed("Missing destination number")
         val simSlot = (command.payload["simSlot"] as? Number)?.toInt() ?: 1
+
+        if (enable) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Log.e("CommandProcessor", "SMS_FORWARDING_DISABLED: Missing permissions")
+                return CommandResult.Failed("Missing READ_SMS or SEND_SMS permission")
+            }
+        }
 
         return try {
             val config = com.boxx.datasync.domain.model.SmsForwardingConfig(
@@ -203,6 +245,7 @@ class CommandProcessor @Inject constructor(
                 .set(config)
                 .await()
 
+            if (enable) Log.d("CommandProcessor", "SMS_FORWARDING_ENABLED") else Log.d("CommandProcessor", "SMS_FORWARDING_DISABLED")
             CommandResult.Success
         } catch (e: Exception) {
             CommandResult.Failed(e.localizedMessage ?: "Failed to update SMS forwarding settings")
