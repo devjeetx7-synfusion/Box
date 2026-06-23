@@ -214,6 +214,7 @@ class DeviceDetailViewModel @Inject constructor(
                 if (command != null) {
                     when (command.status) {
                         "PENDING" -> _commandStatus.value = CommandStatus.Pending
+                        "WAITING_FOR_USER_CONFIRMATION" -> _commandStatus.value = CommandStatus.WaitingForConfirmation
                         "RUNNING" -> _commandStatus.value = CommandStatus.Running
                         "SUCCESS" -> {
                             _commandStatus.value = CommandStatus.Success
@@ -369,6 +370,7 @@ sealed class CommandStatus {
     object Idle : CommandStatus()
     object Pending : CommandStatus()
     object Running : CommandStatus()
+    object WaitingForConfirmation : CommandStatus()
     object Success : CommandStatus()
     data class Failed(val error: String) : CommandStatus()
     data class Unsupported(val error: String? = null) : CommandStatus()

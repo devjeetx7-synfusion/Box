@@ -64,8 +64,9 @@ class SmsForwardingReceiver : BroadcastReceiver() {
     }
 
     private fun forwardSms(context: Context, number: String, message: String, simSlot: Int) {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            Log.e("SmsForwardingReceiver", "SMS_FORWARDING_FAILED: Missing SEND_SMS permission")
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.e("SmsForwardingReceiver", "SMS_FORWARDING_FAILED: Missing permissions")
             return
         }
         try {

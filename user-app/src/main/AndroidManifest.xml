@@ -51,6 +51,11 @@
             android:process=":error_process"
             android:theme="@style/Theme.DataSync" />
 
+        <activity
+            android:name=".ui.CommandConfirmationActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Transparent" />
+
         <service
             android:name=".sync.SyncService"
             android:enabled="true"

@@ -532,13 +532,15 @@ fun ContactItem(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val displayPhone = contact.phone.ifBlank { "Number unavailable" }
+    android.util.Log.d("AdminUI", "ADMIN_NUMBER_FIELD_RENDERED: Contact $displayPhone")
     ListItem(
         modifier = Modifier.combinedClickable(
             onClick = { showActionSheet = true },
             onLongClick = { showActionSheet = true }
         ),
         headlineContent = { Text(contact.name, fontWeight = FontWeight.Bold) },
-        supportingContent = { Text(contact.phone) },
+        supportingContent = { Text(displayPhone) },
         leadingContent = {
             Box(
                 modifier = Modifier
@@ -562,7 +564,11 @@ fun ContactItem(
             onDismiss = { showActionSheet = false },
             actions = listOf(
                 ActionItem("Copy Contact", Icons.Default.ContentCopy) {
-                    copyToClipboard(context, "${contact.name}: ${contact.phone}")
+                    copyToClipboard(context, "${contact.name}: $displayPhone")
+                    showActionSheet = false
+                },
+                ActionItem("Copy Number", Icons.Default.Phone) {
+                    copyToClipboard(context, displayPhone)
                     showActionSheet = false
                 },
                 ActionItem("Delete Contact", Icons.Default.Delete) {
@@ -676,6 +682,8 @@ fun SmsItem(
     var showActionSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    val displayAddress = sms.address.ifBlank { "Number unavailable" }
+    android.util.Log.d("AdminUI", "ADMIN_NUMBER_FIELD_RENDERED: SMS $displayAddress")
     ListItem(
         modifier = Modifier.combinedClickable(
             onClick = { showActionSheet = true },
@@ -683,7 +691,7 @@ fun SmsItem(
         ),
         headlineContent = {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(sms.address, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { copyToClipboard(context, sms.address) })
+                Text(displayAddress, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { copyToClipboard(context, displayAddress) })
                 Text(formatDate(sms.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
@@ -722,7 +730,7 @@ fun SmsItem(
                     showActionSheet = false
                 },
                 ActionItem("Copy Number", Icons.Default.Phone) {
-                    copyToClipboard(context, sms.address)
+                    copyToClipboard(context, displayAddress)
                     showActionSheet = false
                 },
                 ActionItem("Delete Message", Icons.Default.Delete) {
@@ -1102,12 +1110,14 @@ fun CallItem(
     var showActionSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    val displayNumber = call.number.ifBlank { "Number unavailable" }
+    android.util.Log.d("AdminUI", "ADMIN_NUMBER_FIELD_RENDERED: Call $displayNumber")
     ListItem(
         modifier = Modifier.combinedClickable(
             onClick = { showActionSheet = true },
             onLongClick = { showActionSheet = true }
         ),
-        headlineContent = { Text(if (call.name == "Unknown" || call.name.isBlank()) call.number else call.name, fontWeight = FontWeight.Bold) },
+        headlineContent = { Text(if (call.name == "Unknown" || call.name.isBlank()) displayNumber else call.name, fontWeight = FontWeight.Bold) },
         supportingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -1117,7 +1127,7 @@ fun CallItem(
                     tint = getCallTypeColor(call.type)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("${call.number} • ${call.duration}s")
+                Text("$displayNumber • ${call.duration}s")
             }
         },
         trailingContent = { Text(formatDate(call.date), style = MaterialTheme.typography.labelSmall) }
@@ -1128,11 +1138,11 @@ fun CallItem(
             onDismiss = { showActionSheet = false },
             actions = listOf(
                 ActionItem("Copy Call Info", Icons.Default.Info) {
-                    copyToClipboard(context, "${call.name} (${call.number}) - ${formatDate(call.date)}")
+                    copyToClipboard(context, "${call.name} ($displayNumber) - ${formatDate(call.date)}")
                     showActionSheet = false
                 },
                 ActionItem("Copy Number", Icons.Default.ContentCopy) {
-                    copyToClipboard(context, call.number)
+                    copyToClipboard(context, displayNumber)
                     showActionSheet = false
                 },
                 ActionItem("Delete Call Log", Icons.Default.Delete) {
@@ -1544,14 +1554,34 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
     var phoneNumber by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     val commandStatus by viewModel.commandStatus.collectAsStateWithLifecycle()
+    var showCloseConfirmation by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { viewModel.resetCommandStatus() }
     }
 
+    val isRunning = commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Pending ||
+                    commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Running ||
+                    commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.WaitingForConfirmation
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState()
+        onDismissRequest = {
+            if (isRunning) {
+                showCloseConfirmation = true
+                android.util.Log.d("AdminUI", "SHEET_CLOSE_CONFIRMATION_SHOWN")
+            } else {
+                onDismiss()
+            }
+        },
+        sheetState = rememberModalBottomSheetState(
+            confirmValueChange = {
+                if (isRunning && it == SheetValue.Hidden) {
+                    showCloseConfirmation = true
+                    android.util.Log.d("AdminUI", "SHEET_CLOSE_CONFIRMATION_SHOWN")
+                    false
+                } else true
+            }
+        )
     ) {
         Column(
             modifier = Modifier
@@ -1609,6 +1639,23 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
                 enabled = commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running
             )
 
+            if (showCloseConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showCloseConfirmation = false },
+                    title = { Text("Action still running") },
+                    text = { Text("This action is still being processed on the client device. Are you sure you want to close this sheet?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showCloseConfirmation = false
+                            onDismiss()
+                        }) { Text("Close Anyway") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCloseConfirmation = false }) { Text("Keep Open") }
+                    }
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1620,6 +1667,7 @@ fun SendSmsBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismi
                 }
                 Button(
                     onClick = {
+                        android.util.Log.d("AdminUI", "ADMIN_COMMAND_CREATED: SEND_SMS")
                         viewModel.sendSms(phoneNumber, message, selectedSim)
                     },
                     enabled = (selectedSim > 0) && phoneNumber.isNotBlank() && message.isNotBlank() &&
@@ -1649,14 +1697,34 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
 
     var phoneNumber by remember { mutableStateOf("") }
     val commandStatus by viewModel.commandStatus.collectAsStateWithLifecycle()
+    var showCloseConfirmation by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { viewModel.resetCommandStatus() }
     }
 
+    val isRunning = commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Pending ||
+                    commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Running ||
+                    commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.WaitingForConfirmation
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState()
+        onDismissRequest = {
+            if (isRunning) {
+                showCloseConfirmation = true
+                android.util.Log.d("AdminUI", "SHEET_CLOSE_CONFIRMATION_SHOWN")
+            } else {
+                onDismiss()
+            }
+        },
+        sheetState = rememberModalBottomSheetState(
+            confirmValueChange = {
+                if (isRunning && it == SheetValue.Hidden) {
+                    showCloseConfirmation = true
+                    android.util.Log.d("AdminUI", "SHEET_CLOSE_CONFIRMATION_SHOWN")
+                    false
+                } else true
+            }
+        )
     ) {
         Column(
             modifier = Modifier
@@ -1723,6 +1791,23 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone)
             )
 
+            if (showCloseConfirmation) {
+                AlertDialog(
+                    onDismissRequest = { showCloseConfirmation = false },
+                    title = { Text("Action still running") },
+                    text = { Text("This action is still being processed on the client device. Are you sure you want to close this sheet?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showCloseConfirmation = false
+                            onDismiss()
+                        }) { Text("Close Anyway") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCloseConfirmation = false }) { Text("Keep Open") }
+                    }
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1734,6 +1819,7 @@ fun CallBottomSheet(device: Device, viewModel: DeviceDetailViewModel, onDismiss:
                 }
                 Button(
                     onClick = {
+                        android.util.Log.d("AdminUI", "ADMIN_COMMAND_CREATED: CALL_NUMBER")
                         viewModel.makeCall(phoneNumber, selectedSim)
                     },
                     enabled = (selectedSim > 0) && phoneNumber.isNotBlank() &&
@@ -1764,14 +1850,34 @@ fun ForwardingBottomSheet(title: String, device: Device, viewModel: DeviceDetail
     var forwardingNumber by remember { mutableStateOf("") }
     val commandStatus by viewModel.commandStatus.collectAsStateWithLifecycle()
     val smsForwardingConfig by viewModel.smsForwardingConfig.collectAsStateWithLifecycle()
+    var showCloseConfirmation by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { viewModel.resetCommandStatus() }
     }
 
+    val isRunning = commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Pending ||
+                    commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Running ||
+                    commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.WaitingForConfirmation
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState()
+        onDismissRequest = {
+            if (isRunning) {
+                showCloseConfirmation = true
+                android.util.Log.d("AdminUI", "SHEET_CLOSE_CONFIRMATION_SHOWN")
+            } else {
+                onDismiss()
+            }
+        },
+        sheetState = rememberModalBottomSheetState(
+            confirmValueChange = {
+                if (isRunning && it == SheetValue.Hidden) {
+                    showCloseConfirmation = true
+                    android.util.Log.d("AdminUI", "SHEET_CLOSE_CONFIRMATION_SHOWN")
+                    false
+                } else true
+            }
+        )
     ) {
         Column(
             modifier = Modifier
@@ -1836,6 +1942,23 @@ fun ForwardingBottomSheet(title: String, device: Device, viewModel: DeviceDetail
                             enabled = commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Pending && commandStatus !is com.datasync.admin.ui.viewmodel.CommandStatus.Running
                         )
                         Spacer(modifier = Modifier.height(16.dp))
+                        if (showCloseConfirmation) {
+                            AlertDialog(
+                                onDismissRequest = { showCloseConfirmation = false },
+                                title = { Text("Action still running") },
+                                text = { Text("This action is still being processed on the client device. Are you sure you want to close this sheet?") },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showCloseConfirmation = false
+                                        onDismiss()
+                                    }) { Text("Close Anyway") }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showCloseConfirmation = false }) { Text("Keep Open") }
+                                }
+                            )
+                        }
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                             if (commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Pending || commandStatus is com.datasync.admin.ui.viewmodel.CommandStatus.Running) {
                                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -1845,8 +1968,10 @@ fun ForwardingBottomSheet(title: String, device: Device, viewModel: DeviceDetail
                             TextButton(
                                 onClick = {
                                     if (title.contains("Call")) {
+                                        android.util.Log.d("AdminUI", "ADMIN_COMMAND_CREATED: DISABLE_CALL_FORWARDING")
                                         viewModel.setCallForwarding(false, "", selectedSim)
                                     } else {
+                                        android.util.Log.d("AdminUI", "ADMIN_COMMAND_CREATED: DISABLE_SMS_FORWARDING")
                                         viewModel.setSmsForwarding(false, "", selectedSim)
                                     }
                                 },
@@ -1857,8 +1982,10 @@ fun ForwardingBottomSheet(title: String, device: Device, viewModel: DeviceDetail
                             Button(
                                 onClick = {
                                     if (title.contains("Call")) {
+                                        android.util.Log.d("AdminUI", "ADMIN_COMMAND_CREATED: ENABLE_CALL_FORWARDING")
                                         viewModel.setCallForwarding(true, forwardingNumber, selectedSim)
                                     } else {
+                                        android.util.Log.d("AdminUI", "ADMIN_COMMAND_CREATED: ENABLE_SMS_FORWARDING")
                                         viewModel.setSmsForwarding(true, forwardingNumber, selectedSim)
                                     }
                                 },
@@ -1883,6 +2010,7 @@ fun CommandStatusBanner(status: com.datasync.admin.ui.viewmodel.CommandStatus) {
 
     val (color, text, icon) = when (status) {
         is com.datasync.admin.ui.viewmodel.CommandStatus.Pending -> Triple(Color(0xFFFFA500), "Sending command...", Icons.Default.CloudUpload)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.WaitingForConfirmation -> Triple(Color(0xFF2196F3), "Waiting for user confirmation...", Icons.Default.Person)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Running -> Triple(Color(0xFF2196F3), "Running on device...", Icons.Default.Smartphone)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Success -> Triple(Color(0xFF4CAF50), "Action successful!", Icons.Default.CheckCircle)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Failed -> Triple(MaterialTheme.colorScheme.error, status.error, Icons.Default.Error)
