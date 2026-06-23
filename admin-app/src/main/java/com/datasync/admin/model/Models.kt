@@ -24,6 +24,8 @@ data class Device(
     val sim2Carrier: String = "",
     val sim1Number: String = "",
     val sim2Number: String = "",
+    val sim1SubscriptionId: Int = -1,
+    val sim2SubscriptionId: Int = -1,
     val sim1Ready: Boolean = false,
     val sim2Ready: Boolean = false,
     val smsRequestedAt: Long = 0,

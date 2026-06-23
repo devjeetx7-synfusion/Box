@@ -1924,7 +1924,7 @@ fun ForwardingBottomSheet(title: String, device: Device, viewModel: DeviceDetail
 
                         Text("SIM $selectedSim: Active", fontWeight = FontWeight.SemiBold)
                         Text("Carrier: ${carrier.ifBlank { "Unknown" }}", style = MaterialTheme.typography.bodySmall)
-                        Text("Number: ${number.ifBlank { "Number unavailable" }}", style = MaterialTheme.typography.bodySmall)
+                        Text("Number: ${number.ifBlank { "Number not provided by carrier" }}", style = MaterialTheme.typography.bodySmall)
 
                         if (title.contains("SMS") && smsForwardingConfig?.enabled == true) {
                             Spacer(modifier = Modifier.height(8.dp))

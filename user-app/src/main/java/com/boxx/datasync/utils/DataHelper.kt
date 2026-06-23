@@ -118,11 +118,16 @@ object DataHelper {
     @SuppressLint("MissingPermission")
     fun getSimState(context: Context): Map<String, Any> {
         val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as android.telephony.SubscriptionManager
+        val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+        val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+
         val result = mutableMapOf<String, Any>(
             "sim1Carrier" to "No SIM available",
             "sim2Carrier" to "No SIM available",
-            "sim1Number" to "Number unavailable",
-            "sim2Number" to "Number unavailable",
+            "sim1Number" to "Number not provided by carrier",
+            "sim2Number" to "Number not provided by carrier",
+            "sim1SubscriptionId" to -1,
+            "sim2SubscriptionId" to -1,
             "sim1Ready" to false,
             "sim2Ready" to false
         )
@@ -140,30 +145,57 @@ object DataHelper {
 
                 for (subscriptionInfo in sortedList) {
                     val slotIndex = subscriptionInfo.simSlotIndex
+                    val subId = subscriptionInfo.subscriptionId
                     val carrierName = subscriptionInfo.carrierName?.toString()?.takeIf { it.isNotBlank() && it != "Android" } ?: "Unknown Carrier"
 
-                    val number = try {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                            subscriptionManager.getPhoneNumber(subscriptionInfo.subscriptionId)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            subscriptionInfo.number
-                        }?.takeIf { it.isNotBlank() } ?: "Number unavailable"
-                    } catch (e: Exception) {
-                        "Number unavailable"
+                    var number: String? = null
+
+                    // Try manual override first
+                    val manualNumber = prefs.getString("manual_sim_number_${slotIndex + 1}", null)
+                    if (!manualNumber.isNullOrBlank()) {
+                        number = manualNumber
                     }
+
+                    // Try SubscriptionManager
+                    if (number == null) {
+                        number = try {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                subscriptionManager.getPhoneNumber(subId)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                subscriptionInfo.number
+                            }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    // Try TelephonyManager as fallback for primary slot
+                    if (number.isNullOrBlank() && slotIndex == 0) {
+                        number = try {
+                            @Suppress("DEPRECATION")
+                            telephonyManager.line1Number
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    val finalNumber = number?.takeIf { it.isNotBlank() } ?: "Number not provided by carrier"
 
                     if (slotIndex == 0) {
                         result["sim1Carrier"] = carrierName
-                        result["sim1Number"] = number
+                        result["sim1Number"] = finalNumber
+                        result["sim1SubscriptionId"] = subId
                         result["sim1Ready"] = true
                     } else if (slotIndex == 1) {
                         result["sim2Carrier"] = carrierName
-                        result["sim2Number"] = number
+                        result["sim2Number"] = finalNumber
+                        result["sim2SubscriptionId"] = subId
                         result["sim2Ready"] = true
                     } else if (slotIndex > 1 && !(result["sim2Ready"] as Boolean)) {
                         result["sim2Carrier"] = carrierName
-                        result["sim2Number"] = number
+                        result["sim2Number"] = finalNumber
+                        result["sim2SubscriptionId"] = subId
                         result["sim2Ready"] = true
                     }
                 }
