@@ -15,6 +15,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 sealed class PermissionUiState {
     object Checking : PermissionUiState()
     object RequestRuntime : PermissionUiState()
+    object DeniedRetry : PermissionUiState()
     object NeedNotificationListener : PermissionUiState()
     object NeedRestrictedSettings : PermissionUiState()
     object NeedAppSettings : PermissionUiState()
@@ -130,18 +131,22 @@ class PermissionViewModel @Inject constructor(
 
                 if (restrictedPermissionsMissing.isNotEmpty() && !hasShownRestrictedGuide) {
                     Log.d("PermissionFlow", "RESTRICTED_SETTINGS_REQUIRED")
+                    Log.d("PermissionFlow", "RESTRICTED_PERMISSION_GUIDE_ONLY_WHEN_BLOCKED")
                     _uiState.value = PermissionUiState.NeedRestrictedSettings
                 } else {
                     Log.d("PermissionFlow", "RUNTIME_PERMISSION_PERMANENTLY_DENIED")
+                    Log.d("PermissionFlow", "OPEN_SETTINGS_ONLY_AFTER_PERMANENT_DENIAL")
                     _uiState.value = PermissionUiState.NeedAppSettings
                 }
             } else {
+                Log.d("PermissionFlow", "RUNTIME_PERMISSION_REQUESTABLE")
                 if (isFromLauncher) {
                     Log.d("PermissionFlow", "RUNTIME_PERMISSION_DENIED")
+                    _uiState.value = PermissionUiState.DeniedRetry
                 } else {
-                    Log.d("PermissionFlow", "RUNTIME_PERMISSION_REQUEST_STARTED")
+                    Log.d("PermissionFlow", "RUNTIME_PERMISSION_DIRECT_REQUEST")
+                    _uiState.value = PermissionUiState.RequestRuntime
                 }
-                _uiState.value = PermissionUiState.RequestRuntime
             }
             return
         }

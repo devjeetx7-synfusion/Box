@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
                     val uiState by permissionViewModel.uiState.collectAsState()
                     val permissions by permissionViewModel.permissions.collectAsState()
                     val handler = remember { PermissionHandler(context) }
+                    var pendingSyncRequest by remember { mutableStateOf(false) }
 
                     val launcher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
@@ -88,8 +89,13 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 onSyncClick = {
                                     Log.d("MainActivity", "SYNC_BUTTON_CLICKED")
-                                    viewModel.setSyncing()
-                                    startSyncService(context)
+                                    if (state is PermissionUiState.Ready) {
+                                        viewModel.setSyncing()
+                                        startSyncService(context)
+                                    } else {
+                                        pendingSyncRequest = true
+                                        permissionViewModel.refreshStatuses(this@MainActivity)
+                                    }
                                 },
                                 showSettings = {
                                     val intent = handler.getAppSettingsIntent()
@@ -107,11 +113,26 @@ class MainActivity : ComponentActivity() {
                                             .mapNotNull { it.permission }
                                             .toTypedArray()
                                         if (runtimePermissions.isNotEmpty()) {
+                                            handler.markRequested(runtimePermissions)
                                             launcher.launch(runtimePermissions)
                                         } else {
                                             permissionViewModel.refreshStatuses(this@MainActivity)
                                         }
                                     }
+                                }
+                                is PermissionUiState.DeniedRetry -> {
+                                    AlertDialog(
+                                        onDismissRequest = { /* Prevent dismissal */ },
+                                        title = { Text("Permission Required") },
+                                        text = { Text("App needs permissions to work properly.") },
+                                        confirmButton = {
+                                            Button(onClick = {
+                                                permissionViewModel.refreshStatuses(this@MainActivity, isFromLauncher = false)
+                                            }) {
+                                                Text("Retry Permission")
+                                            }
+                                        }
+                                    )
                                 }
                                 is PermissionUiState.NeedNotificationListener -> {
                                     SimplePermissionDialog(
@@ -153,6 +174,12 @@ class MainActivity : ComponentActivity() {
                                         Log.d("PermissionFlow", "PERMISSION_FLOW_READY")
                                         (context.applicationContext as? UserApplication)?.setupContentObservers()
                                         permissionViewModel.refreshStatuses(this@MainActivity) // Final check
+
+                                        if (pendingSyncRequest) {
+                                            pendingSyncRequest = false
+                                            viewModel.setSyncing()
+                                            startSyncService(context)
+                                        }
                                     }
                                 }
                                 else -> {}
