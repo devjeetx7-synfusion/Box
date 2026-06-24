@@ -40,6 +40,22 @@ class AdminRepositoryImpl @Inject constructor(
             .distinctUntilChanged()
     }
 
+    override fun getMedia(deviceId: String): Flow<List<MediaData>> {
+        return db.collection("devices")
+            .document(deviceId)
+            .collection("media")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.documents.mapNotNull { it.toObject(MediaData::class.java) }
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error fetching media for $deviceId", e)
+                emit(emptyList())
+            }
+            .distinctUntilChanged()
+    }
+
     override fun getDevice(deviceId: String): Flow<Device?> {
         Log.d("AdminRepositoryImpl", "ADMIN_LISTENER_STARTED: getDevice $deviceId")
         if (deviceId.isBlank()) return kotlinx.coroutines.flow.flowOf(null)
@@ -187,6 +203,19 @@ class AdminRepositoryImpl @Inject constructor(
                 .await()
         } catch (e: Exception) {
             Log.e("AdminRepositoryImpl", "Error deleting item $itemId from $collection", e)
+        }
+    }
+
+    override suspend fun deleteMedia(deviceId: String, mediaId: String) {
+        try {
+            db.collection("devices")
+                .document(deviceId)
+                .collection("media")
+                .document(mediaId)
+                .delete()
+                .await()
+        } catch (e: Exception) {
+            Log.e("AdminRepositoryImpl", "Error deleting media $mediaId", e)
         }
     }
 

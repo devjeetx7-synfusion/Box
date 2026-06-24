@@ -20,11 +20,13 @@ class CommandConfirmationActivity : ComponentActivity() {
         val deviceId = intent.getStringExtra("deviceId") ?: return finish()
         val commandId = intent.getStringExtra("commandId") ?: return finish()
         val commandType = intent.getStringExtra("commandType") ?: "Action"
+        val customMessage = intent.getStringExtra("customMessage")
 
         setContent {
             MaterialTheme {
                 ConfirmationDialog(
                     commandType = commandType,
+                    customMessage = customMessage,
                     onConfirm = {
                         updateStatus(deviceId, commandId, "CONFIRMED")
                         finish()
@@ -49,11 +51,11 @@ class CommandConfirmationActivity : ComponentActivity() {
 }
 
 @Composable
-fun ConfirmationDialog(commandType: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+fun ConfirmationDialog(commandType: String, customMessage: String?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Command Confirmation") },
-        text = { Text("The admin has requested to perform: $commandType. Do you allow this action?") },
+        text = { Text(customMessage ?: "The admin has requested to perform: $commandType. Do you allow this action?") },
         confirmButton = {
             Button(onClick = onConfirm) {
                 Text("Allow")

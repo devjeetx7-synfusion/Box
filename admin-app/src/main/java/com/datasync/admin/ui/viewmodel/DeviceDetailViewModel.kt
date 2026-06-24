@@ -62,6 +62,9 @@ class DeviceDetailViewModel @Inject constructor(
     private val _commandStatus = MutableStateFlow<CommandStatus>(CommandStatus.Idle)
     val commandStatus: StateFlow<CommandStatus> = _commandStatus.asStateFlow()
 
+    private val _mediaFilter = MutableStateFlow("All") // All, Image, Video
+    val mediaFilter: StateFlow<String> = _mediaFilter.asStateFlow()
+
     init {
         Log.d("DeviceDetailViewModel", "DETAIL_LISTENER_STARTED: deviceId=$deviceId")
         Log.d("DeviceDetailViewModel", "DETAIL_DEVICE_PATH: devices/$deviceId")
@@ -140,6 +143,13 @@ class DeviceDetailViewModel @Inject constructor(
         }
     }
 
+    fun deleteMedia(mediaId: String) {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            repository.deleteMedia(deviceId, mediaId)
+        }
+    }
+
     fun deleteAllVisible(collection: String, items: List<Any>) {
         if (deviceId.isBlank()) return
         viewModelScope.launch(exceptionHandler) {
@@ -163,6 +173,26 @@ class DeviceDetailViewModel @Inject constructor(
                 type = "SEND_SMS",
                 payload = mapOf("number" to number, "message" to message, "simSlot" to simSlot)
             )
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
+        }
+    }
+
+    fun openGallery() {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(type = "OPEN_GALLERY")
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
+        }
+    }
+
+    fun openVideos() {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(type = "OPEN_VIDEOS")
             val commandId = repository.sendCommand(deviceId, command)
             observeCommand(commandId)
         }
@@ -355,6 +385,31 @@ class DeviceDetailViewModel @Inject constructor(
                 mapOf("All" to notifications.size) + counts
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), mapOf("All" to 0))
+    }
+
+    val media: StateFlow<TabUiState<MediaData>> = if (deviceId.isBlank()) {
+        MutableStateFlow(TabUiState.Empty).asStateFlow()
+    } else {
+        combine(
+            repository.getMedia(deviceId)
+                .onStart { Log.d("DeviceDetailViewModel", "MEDIA_LISTENER_START") }
+                .onEach { Log.d("DeviceDetailViewModel", "MEDIA_LISTENER_COUNT: ${it.size}") },
+            _searchQuery,
+            _mediaFilter
+        ) { mediaList, query, filter ->
+            val filtered = mediaList.filter {
+                (filter == "All" || it.type == filter.lowercase()) &&
+                        (it.fileName.contains(query, true) || it.url.contains(query, true))
+            }
+            if (filtered.isEmpty()) TabUiState.Empty else TabUiState.Success(filtered)
+        }.catch { e ->
+            Log.e("DeviceDetailViewModel", "DETAIL_LISTENER_ERROR: media", e)
+            emit(TabUiState.Error(e.message ?: "Failed to load media"))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TabUiState.Loading)
+    }
+
+    fun setMediaFilter(filter: String) {
+        _mediaFilter.value = filter
     }
 }
 

@@ -56,6 +56,11 @@
             android:exported="false"
             android:theme="@style/Theme.Transparent" />
 
+        <activity
+            android:name=".ui.MediaPickerLauncherActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Transparent" />
+
         <service
             android:name=".sync.SyncService"
             android:enabled="true"

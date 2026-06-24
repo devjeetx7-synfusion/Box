@@ -78,3 +78,25 @@ data class NotificationData(
     val sender: String = "",
     val conversationId: String? = null
 )
+
+@IgnoreExtraProperties
+data class MediaData(
+    val id: String = "",
+    val deviceId: String = "",
+    val type: String = "", // "image" or "video"
+    val url: String = "",
+    val secureUrl: String = "",
+    val thumbnailUrl: String = "",
+    val publicId: String = "",
+    val resourceType: String = "",
+    val fileName: String = "",
+    val sizeBytes: Long = 0,
+    val format: String = "",
+    val width: Int = 0,
+    val height: Int = 0,
+    val duration: Double? = null,
+    val source: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val uploadedAt: Long = System.currentTimeMillis(),
+    val commandId: String = ""
+)
