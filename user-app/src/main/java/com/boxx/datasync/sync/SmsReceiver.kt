@@ -14,11 +14,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-class SmsForwardingReceiver : BroadcastReceiver() {
+class SmsReceiver : BroadcastReceiver() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != "android.provider.Telephony.SMS_RECEIVED") return
+        Log.d("SmsReceiver", "SMS_RECEIVER_TRIGGERED")
+        SyncScheduler.enqueueIncremental(context)
+        Log.d("SmsReceiver", "SMS_WORK_ENQUEUED")
 
         val deviceId = DeviceIdHelper.getDeviceId(context)
         if (deviceId.isBlank()) return
@@ -56,7 +59,7 @@ class SmsForwardingReceiver : BroadcastReceiver() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("SmsForwardingReceiver", "Error in SMS forwarding", e)
+                Log.e("SmsReceiver", "Error in SMS forwarding", e)
             } finally {
                 pendingResult.finish()
             }
@@ -66,7 +69,7 @@ class SmsForwardingReceiver : BroadcastReceiver() {
     private fun forwardSms(context: Context, number: String, message: String, simSlot: Int) {
         if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
             androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            Log.e("SmsForwardingReceiver", "SMS_FORWARDING_FAILED: Missing permissions")
+            Log.e("SmsReceiver", "SMS_FORWARDING_FAILED: Missing permissions")
             return
         }
         try {
@@ -83,9 +86,9 @@ class SmsForwardingReceiver : BroadcastReceiver() {
                 android.telephony.SmsManager.getDefault()
             }
             smsManager.sendTextMessage(number, null, message, null, null)
-            Log.d("SmsForwardingReceiver", "SMS_FORWARDING_SENT")
+            Log.d("SmsReceiver", "SMS_FORWARDING_SENT")
         } catch (e: Exception) {
-            Log.e("SmsForwardingReceiver", "SMS_FORWARDING_FAILED", e)
+            Log.e("SmsReceiver", "SMS_FORWARDING_FAILED", e)
         }
     }
 }

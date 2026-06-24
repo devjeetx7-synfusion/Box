@@ -1,0 +1,32 @@
+--- user-app/src/main/java/com/boxx/datasync/ui/screen/MainScreen.kt
++++ user-app/src/main/java/com/boxx/datasync/ui/screen/MainScreen.kt
+@@ -121,6 +121,29 @@
+                     style = MaterialTheme.typography.bodySmall,
+                     modifier = Modifier.padding(horizontal = 16.dp)
+                 )
++
++                Card(
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = RoundedCornerShape(16.dp),
++                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
++                ) {
++                    Column(modifier = Modifier.padding(16.dp)) {
++                        Text("Background Sync Help", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
++                        Spacer(modifier = Modifier.height(4.dp))
++                        Text("If background sync fails or is delayed, your device's battery optimization might be restricting it. You can optionally set it to 'Unrestricted' for better reliability.",
++                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
++                        Spacer(modifier = Modifier.height(8.dp))
++                        Button(
++                            onClick = {
++                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
++                                context.startActivity(intent)
++                            },
++                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onErrorContainer, contentColor = MaterialTheme.colorScheme.errorContainer)
++                        ) {
++                            Text("Open Battery Settings")
++                        }
++                    }
++                }
+                 OutlinedButton(onClick = {
+                     copyToClipboard(context, "Device ID: $deviceId\nStatus: $syncStatus\nLast Synced: $lastSyncTime\nError: $error")
+                 }) {

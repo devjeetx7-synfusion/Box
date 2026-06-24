@@ -17,10 +17,12 @@ class SyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         Log.d("SyncWorker", "WORKER_SYNC_STARTED")
+        Log.d("SyncWorker", "WORKMANAGER_EVENT_SYNC_STARTED")
         return try {
             val isFullSync = inputData.getBoolean(SyncScheduler.KEY_FULL_SYNC, false)
             syncCoordinator.performSync(applicationContext, isFullSync)
             Log.d("SyncWorker", "WORKER_SYNC_SUCCESS")
+            Log.d("SyncWorker", "WORKMANAGER_EVENT_SYNC_SUCCESS")
             Result.success()
         } catch (e: Exception) {
             Log.e("SyncWorker", "WORKER_SYNC_FAILED", e)

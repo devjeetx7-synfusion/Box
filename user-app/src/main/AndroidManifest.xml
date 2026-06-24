@@ -73,7 +73,7 @@
         </service>
 
         <receiver
-            android:name=".sync.SmsForwardingReceiver"
+            android:name=".sync.SmsReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter android:priority="999">
