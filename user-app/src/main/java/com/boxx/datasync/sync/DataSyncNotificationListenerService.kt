@@ -57,6 +57,7 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
         }
 
         Log.d("NotificationListener", "NOTIFICATION_RECEIVED: $packageName")
+        Log.d("NotificationListener", "NOTIFICATION_POSTED_BACKGROUND")
 
         val extras = sbn.notification.extras
         val timestamp = sbn.postTime
@@ -170,6 +171,8 @@ class DataSyncNotificationListenerService : NotificationListenerService() {
                 }
             } catch (e: Exception) {
                 Log.e("NotificationListener", "NOTIFICATION_UPLOAD_FAILED", e)
+                Log.d("NotificationListener", "NOTIFICATION_RETRY_ENQUEUED")
+                SyncScheduler.enqueueIncremental(this@DataSyncNotificationListenerService)
             }
         }
     }
