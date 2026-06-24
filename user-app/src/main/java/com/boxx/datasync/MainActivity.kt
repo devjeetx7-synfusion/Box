@@ -138,19 +138,6 @@ class MainActivity : ComponentActivity() {
                                         }
                                     )
                                 }
-                                is PermissionUiState.NeedBatteryOptimization -> {
-                                    SimplePermissionDialog(
-                                        title = "Battery Optimization",
-                                        text = "Disable optimization to ensure reliable background sync.",
-                                        onConfirm = {
-                                            Log.d("PermissionFlow", "PERMISSION_SETTINGS_OPENED - Battery Optimization")
-                                            val info = permissions.find { it.id == "BATTERY_OPTIMIZATION" }
-                                            if (info != null) {
-                                                context.startActivity(handler.getSettingsIntent(info))
-                                            }
-                                        }
-                                    )
-                                }
                                 is PermissionUiState.NeedAppSettings -> {
                                     SimplePermissionDialog(
                                         title = "Permission Required",
