@@ -31,6 +31,20 @@ data class PermissionInfo(
 
 class PermissionHandler(private val context: Context) {
 
+    private val prefs = context.getSharedPreferences("permission_prefs", Context.MODE_PRIVATE)
+
+    fun markRequested(permissions: Array<String>) {
+        val editor = prefs.edit()
+        permissions.forEach { perm ->
+            editor.putBoolean("requested_$perm", true)
+        }
+        editor.apply()
+    }
+
+    private fun hasRequested(permission: String): Boolean {
+        return prefs.getBoolean("requested_$permission", false)
+    }
+
     fun getStatus(info: PermissionInfo): PermissionStatus {
         if (info.isSpecial) {
             return when (info.id) {
@@ -62,8 +76,11 @@ class PermissionHandler(private val context: Context) {
 
     fun isPermanentlyDenied(activity: android.app.Activity, info: PermissionInfo): Boolean {
         val perm = info.permission ?: return false
-        return !ActivityCompat.shouldShowRequestPermissionRationale(activity, perm) &&
-                ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_DENIED
+        // A permission is only permanently denied if it has been requested before,
+        // it is denied, and shouldShowRequestPermissionRationale returns false.
+        val isDenied = ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_DENIED
+        val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
+        return isDenied && !shouldShowRationale && hasRequested(perm)
     }
 
     private fun isNotificationListenerEnabled(): Boolean {
