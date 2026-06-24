@@ -79,6 +79,36 @@ class PermissionViewModel @Inject constructor(
             )
         )
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            list.add(PermissionInfo(
+                "MEDIA_IMAGES", "Images",
+                "Access images to backup your gallery.",
+                "PhotoLibrary", Manifest.permission.READ_MEDIA_IMAGES
+            ))
+            list.add(PermissionInfo(
+                "MEDIA_VIDEO", "Videos",
+                "Access videos to backup your gallery.",
+                "VideoLibrary", Manifest.permission.READ_MEDIA_VIDEO
+            ))
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            list.add(PermissionInfo(
+                "MEDIA_IMAGES", "Images",
+                "Access images to backup your gallery.",
+                "PhotoLibrary", Manifest.permission.READ_MEDIA_IMAGES
+            ))
+            list.add(PermissionInfo(
+                "MEDIA_VIDEO", "Videos",
+                "Access videos to backup your gallery.",
+                "VideoLibrary", Manifest.permission.READ_MEDIA_VIDEO
+            ))
+        } else {
+            list.add(PermissionInfo(
+                "STORAGE", "Storage",
+                "Access storage to backup your gallery.",
+                "Storage", Manifest.permission.READ_EXTERNAL_STORAGE
+            ))
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(PermissionInfo(
                 "NOTIFICATIONS", "Notifications",

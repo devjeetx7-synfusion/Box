@@ -43,7 +43,20 @@ class MainViewModel @Inject constructor(
     private val _simInfo = MutableStateFlow<Map<String, Any>>(emptyMap())
     val simInfo: StateFlow<Map<String, Any>> = _simInfo.asStateFlow()
 
-    init { observeFirestore() }
+    private val _autoMediaSyncEnabled = MutableStateFlow(false)
+    val autoMediaSyncEnabled: StateFlow<Boolean> = _autoMediaSyncEnabled.asStateFlow()
+
+    private val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(application)
+
+    init {
+        _autoMediaSyncEnabled.value = prefs.getBoolean("auto_media_sync", false)
+        observeFirestore()
+    }
+
+    fun setAutoMediaSync(enabled: Boolean) {
+        _autoMediaSyncEnabled.value = enabled
+        prefs.edit().putBoolean("auto_media_sync", enabled).apply()
+    }
 
     fun saveManualNumber(slotIndex: Int, number: String) {
         val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(getApplication())

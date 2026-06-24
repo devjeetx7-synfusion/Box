@@ -66,6 +66,14 @@ class PermissionHandler(private val context: Context) {
             return PermissionStatus.GRANTED
         }
 
+        // Handle Android 14+ partial media access
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            (perm == Manifest.permission.READ_MEDIA_IMAGES || perm == Manifest.permission.READ_MEDIA_VIDEO)) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED) {
+                return PermissionStatus.GRANTED
+            }
+        }
+
         return when {
             ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED -> {
                 PermissionStatus.GRANTED

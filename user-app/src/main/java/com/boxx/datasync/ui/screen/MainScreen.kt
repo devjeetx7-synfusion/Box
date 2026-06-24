@@ -35,6 +35,7 @@ fun MainScreen(
     val lastSyncTime by viewModel.lastSyncTime.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val autoMediaSyncEnabled by viewModel.autoMediaSyncEnabled.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -160,6 +161,36 @@ fun MainScreen(
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     InfoRow(label = "Device ID", value = deviceId)
                     InfoRow(label = "Last Synced", value = lastSyncTime)
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Auto Media Sync", fontWeight = FontWeight.Bold)
+                        }
+                        Switch(
+                            checked = autoMediaSyncEnabled,
+                            onCheckedChange = { viewModel.setAutoMediaSync(it) }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "When enabled, selected/new images and videos will upload to Cloudinary and appear in Admin Media grid.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

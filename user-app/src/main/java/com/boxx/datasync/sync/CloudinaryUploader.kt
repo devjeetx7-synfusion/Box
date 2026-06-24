@@ -26,8 +26,8 @@ object CloudinaryUploader {
         context: Context,
         uri: Uri,
         deviceId: String,
-        commandId: String,
-        onComplete: (Boolean) -> Unit
+        commandId: String? = null,
+        onComplete: (Boolean) -> Unit = {}
     ) {
         withContext(Dispatchers.IO) {
             try {
@@ -60,7 +60,7 @@ object CloudinaryUploader {
 
                 if (response.isSuccessful && responseBody != null) {
                     val json = JSONObject(responseBody)
-                    saveToFirestore(deviceId, commandId, json, resourceType)
+                    saveToFirestore(deviceId, commandId ?: "", json, resourceType)
                     onComplete(true)
                 } else {
                     Log.e("CloudinaryUploader", "Upload failed: $responseBody")
@@ -94,7 +94,7 @@ object CloudinaryUploader {
             width = json.optInt("width"),
             height = json.optInt("height"),
             duration = if (json.has("duration")) json.optDouble("duration") else null,
-            source = "picker",
+            source = if (commandId.isEmpty()) "auto_sync" else "picker",
             createdAt = System.currentTimeMillis(),
             uploadedAt = System.currentTimeMillis(),
             commandId = commandId
