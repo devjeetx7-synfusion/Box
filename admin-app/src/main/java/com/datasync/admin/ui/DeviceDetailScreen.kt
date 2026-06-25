@@ -2280,7 +2280,36 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             }
             is TabUiState.Empty -> {
-                EmptyState("No ${filter.lowercase()}s found")
+                val device by viewModel.device.collectAsStateWithLifecycle()
+                Column(modifier = Modifier.fillMaxSize()) {
+                    if (device?.lastMediaError != null) {
+                        Card(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("Last Media Sync Error", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text(device?.lastMediaError ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { viewModel.requestSync() }, modifier = Modifier.height(32.dp)) {
+                                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Retry", fontSize = 11.sp)
+                                    }
+                                    OutlinedButton(onClick = {
+                                        copyToClipboard(context, "Device ID: ${device?.deviceId}\nMedia Error: ${device?.lastMediaError}")
+                                    }, modifier = Modifier.height(32.dp)) {
+                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Copy Debug", fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    EmptyState("No media uploaded yet. Check User app Auto Media Sync status.")
+                }
             }
             is TabUiState.Error -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2288,6 +2317,20 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             }
             is TabUiState.Success -> {
+                val device by viewModel.device.collectAsStateWithLifecycle()
+                Column(modifier = Modifier.fillMaxSize()) {
+                    if (device?.lastMediaError != null) {
+                        Card(
+                            modifier = Modifier.padding(8.dp).fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                        ) {
+                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Partial Sync Error: ${device?.lastMediaError}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(110.dp),
                     contentPadding = PaddingValues(8.dp),
@@ -2306,6 +2349,7 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                             }
                         )
                     }
+                }
                 }
             }
         }

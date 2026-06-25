@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit
 object SyncScheduler {
     const val PERIODIC_SYNC_NAME = "PeriodicSync"
     const val EVENT_SYNC_NAME = "EventTriggeredIncrementalSync"
+    const val MEDIA_SYNC_NAME = "AutoMediaSync"
     const val KEY_FULL_SYNC = "full_sync"
 
     fun schedulePeriodic(context: Context) {
@@ -25,6 +26,19 @@ object SyncScheduler {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_SYNC_NAME,
             ExistingPeriodicWorkPolicy.UPDATE,
+            request
+        )
+    }
+
+    fun enqueueMediaSync(context: Context) {
+        Log.d("SyncScheduler", "AUTO_MEDIA_SYNC_TRIGGERED")
+        val request = OneTimeWorkRequestBuilder<MediaSyncWorker>()
+            .setConstraints(networkConstraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            MEDIA_SYNC_NAME,
+            ExistingWorkPolicy.REPLACE,
             request
         )
     }

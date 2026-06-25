@@ -172,8 +172,15 @@ class MainActivity : ComponentActivity() {
                                 is PermissionUiState.Ready -> {
                                     LaunchedEffect(Unit) {
                                         Log.d("PermissionFlow", "PERMISSION_FLOW_READY")
+                                        Log.d("MainActivity", "PERMISSION_READY_AUTO_MEDIA_CHECK")
                                         (context.applicationContext as? UserApplication)?.setupContentObservers()
                                         permissionViewModel.refreshStatuses(this@MainActivity) // Final check
+
+                                        if (viewModel.autoMediaSyncEnabled.value) {
+                                            Log.d("MainActivity", "AUTO_MEDIA_SYNC_ENABLED_AFTER_PERMISSION")
+                                            Log.d("MainActivity", "AUTO_MEDIA_SYNC_TRIGGERED_AFTER_PERMISSION")
+                                            viewModel.triggerMediaSyncNow()
+                                        }
 
                                         if (pendingSyncRequest) {
                                             pendingSyncRequest = false
