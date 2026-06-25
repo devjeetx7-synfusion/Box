@@ -17,18 +17,18 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.util.UUID
 
 sealed class MediaUploadResult {
     data class Success(
         val mediaId: String,
         val secureUrl: String,
-        val publicId: String
+        val publicId: String,
+        val type: String
     ) : MediaUploadResult()
 
     data class Failed(
         val stage: String,
-        val errorMessage: String,
+        val message: String,
         val rawResponse: String? = null
     ) : MediaUploadResult()
 }
@@ -40,13 +40,15 @@ object CloudinaryUploader {
         context: Context,
         uri: Uri,
         deviceId: String,
+        mediaStoreId: String,
+        mimeTypeHint: String? = null,
         commandId: String? = null
     ): MediaUploadResult {
         return withContext(Dispatchers.IO) {
             try {
                 Log.d("CloudinaryUploader", "MEDIA_URI_SELECTED: $uri")
 
-                val mimeType = context.contentResolver.getType(uri)
+                val mimeType = mimeTypeHint ?: context.contentResolver.getType(uri)
                 Log.d("CloudinaryUploader", "MEDIA_MIME_DETECTED: $mimeType")
 
                 val resourceType = when {
@@ -59,6 +61,14 @@ object CloudinaryUploader {
                     }
                 }
 
+                val mediaId = "${resourceType}_$mediaStoreId"
+
+                // Check for existing media in Firestore before upload
+                if (checkIfMediaExists(deviceId, mediaId)) {
+                    Log.d("CloudinaryUploader", "MEDIA_DUPLICATE_SKIPPED: $mediaId")
+                    return@withContext MediaUploadResult.Failed("DUPLICATE_SKIPPED", "Media already exists in Firestore")
+                }
+
                 Log.d("CloudinaryUploader", "MEDIA_FILE_COPY_STARTED")
                 val file = getFileFromUri(context, uri)
                 if (file == null) {
@@ -67,6 +77,8 @@ object CloudinaryUploader {
                 Log.d("CloudinaryUploader", "MEDIA_FILE_COPY_SUCCESS: ${file.name}")
 
                 val url = "https://api.cloudinary.com/v1_1/${CloudinaryConfig.CLOUDINARY_CLOUD_NAME}/$resourceType/upload"
+                Log.d("CloudinaryUploader", "CLOUDINARY_ENDPOINT_USED: $url")
+
                 val folder = "data_sync/devices/$deviceId/${if (resourceType == "video") "videos" else "images"}"
 
                 Log.d("CloudinaryUploader", "CLOUDINARY_UPLOAD_STARTED: $resourceType")
@@ -91,12 +103,13 @@ object CloudinaryUploader {
                     Log.d("CloudinaryUploader", "FIRESTORE_MEDIA_SAVE_STARTED")
                     updateCommandStatus(deviceId, commandId ?: "", "SAVING_METADATA")
                     try {
-                        val mediaId = saveToFirestore(deviceId, commandId ?: "", json, resourceType)
+                        saveToFirestore(deviceId, mediaId, commandId ?: "", json, resourceType)
                         Log.d("CloudinaryUploader", "FIRESTORE_MEDIA_SAVE_SUCCESS")
                         MediaUploadResult.Success(
                             mediaId = mediaId,
                             secureUrl = json.optString("secure_url"),
-                            publicId = json.optString("public_id")
+                            publicId = json.optString("public_id"),
+                            type = resourceType
                         )
                     } catch (e: Exception) {
                         Log.e("CloudinaryUploader", "FIRESTORE_MEDIA_SAVE_FAILED", e)
@@ -118,14 +131,29 @@ object CloudinaryUploader {
                 result
             } catch (e: Exception) {
                 Log.e("CloudinaryUploader", "Error uploading media", e)
-                MediaUploadResult.Failed("UNKNOWN_ERROR", e.localizedMessage ?: "Unknown error occurred during upload")
+                val stage = if (e is java.io.IOException) "NETWORK_FAILED" else "UNKNOWN_FAILED"
+                MediaUploadResult.Failed(stage, e.localizedMessage ?: "Unknown error occurred during upload")
             }
         }
     }
 
-    private suspend fun saveToFirestore(deviceId: String, commandId: String, json: JSONObject, type: String): String {
+    private suspend fun checkIfMediaExists(deviceId: String, mediaId: String): Boolean {
+        return try {
+            val db = FirebaseFirestore.getInstance()
+            val doc = db.collection("devices")
+                .document(deviceId)
+                .collection("media")
+                .document(mediaId)
+                .get()
+                .await()
+            doc.exists()
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private suspend fun saveToFirestore(deviceId: String, mediaId: String, commandId: String, json: JSONObject, type: String) {
         val db = FirebaseFirestore.getInstance()
-        val mediaId = UUID.randomUUID().toString()
 
         val mediaData = MediaData(
             id = mediaId,
@@ -154,8 +182,6 @@ object CloudinaryUploader {
             .document(mediaId)
             .set(mediaData)
             .await()
-
-        return mediaId
     }
 
     private suspend fun updateCommandStatus(deviceId: String, commandId: String, status: String) {

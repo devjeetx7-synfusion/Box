@@ -35,7 +35,9 @@ data class Device(
     val callRequestedAt: Long = 0,
     val callRequestNumber: String = "",
     val callRequestSimSlot: Int = 0,
-    val forceFullSyncRequestedAt: Long = 0
+    val forceFullSyncRequestedAt: Long = 0,
+    val lastMediaSyncTime: Long = 0,
+    val lastMediaError: String? = null
 )
 
 @IgnoreExtraProperties

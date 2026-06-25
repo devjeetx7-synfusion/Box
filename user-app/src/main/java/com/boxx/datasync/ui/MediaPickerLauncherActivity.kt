@@ -154,7 +154,8 @@ class MediaPickerLauncherActivity : ComponentActivity() {
         commandId?.let { updateCommandStatus(deviceId, it, "UPLOADING_TO_CLOUDINARY", null) }
 
         scope.launch {
-            val result = CloudinaryUploader.uploadMedia(this@MediaPickerLauncherActivity, uri, deviceId, commandId)
+            val mediaStoreId = uri.lastPathSegment ?: System.currentTimeMillis().toString()
+            val result = CloudinaryUploader.uploadMedia(this@MediaPickerLauncherActivity, uri, deviceId, mediaStoreId, commandId)
 
             when (result) {
                 is MediaUploadResult.Success -> {
@@ -166,19 +167,20 @@ class MediaPickerLauncherActivity : ComponentActivity() {
                 }
                 is MediaUploadResult.Failed -> {
                     isUploading = false
-                    errorMessage = result.errorMessage
+                    errorMessage = result.message
                     rawError = result.rawResponse
 
                     val stageText = when(result.stage) {
                         "URI_COPY_FAILED" -> "Failed to process selected file"
                         "CLOUDINARY_UPLOAD_FAILED" -> "Cloudinary upload failed"
                         "FIRESTORE_METADATA_FAILED" -> "Metadata sync failed"
+                        "DUPLICATE_SKIPPED" -> "Media already synced"
                         else -> "Upload failed"
                     }
 
                     statusText = stageText
                     commandId?.let {
-                        updateCommandStatus(deviceId, it, "FAILED", "${result.stage}: ${result.errorMessage}")
+                        updateCommandStatus(deviceId, it, "FAILED", "${result.stage}: ${result.message}")
                     }
                 }
             }

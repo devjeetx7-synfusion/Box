@@ -36,6 +36,8 @@ fun MainScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val autoMediaSyncEnabled by viewModel.autoMediaSyncEnabled.collectAsState()
+    val lastMediaSyncTime by viewModel.lastMediaSyncTime.collectAsState()
+    val lastMediaError by viewModel.lastMediaError.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -123,6 +125,14 @@ fun MainScreen(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
 
+                if (error.contains("Media permission", ignoreCase = true)) {
+                    Text(
+                        "Media permission not granted. Images/videos cannot be synced.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -146,11 +156,32 @@ fun MainScreen(
                     }
                 }
                 OutlinedButton(onClick = {
-                    copyToClipboard(context, "Device ID: $deviceId\nStatus: $syncStatus\nLast Synced: $lastSyncTime\nError: $error")
+                    copyToClipboard(context, "Device ID: $deviceId\nStatus: $syncStatus\nLast Synced: $lastSyncTime\nLast Media Sync: $lastMediaSyncTime\nError: $error\nMedia Error: $lastMediaError")
                 }) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Copy Debug Info")
+                }
+            }
+
+            lastMediaError?.let { mError ->
+                if (errorMessage == null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Media Sync Error", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                            Text(mError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                        }
+                    }
+                    OutlinedButton(onClick = {
+                        copyToClipboard(context, "Device ID: $deviceId\nLast Media Sync: $lastMediaSyncTime\nMedia Error: $mError")
+                    }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copy Debug Info")
+                    }
                 }
             }
 
@@ -161,6 +192,7 @@ fun MainScreen(
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     InfoRow(label = "Device ID", value = deviceId)
                     InfoRow(label = "Last Synced", value = lastSyncTime)
+                    InfoRow(label = "Last Media", value = lastMediaSyncTime)
                 }
             }
 

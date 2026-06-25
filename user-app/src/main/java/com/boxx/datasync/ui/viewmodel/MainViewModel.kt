@@ -46,6 +46,12 @@ class MainViewModel @Inject constructor(
     private val _autoMediaSyncEnabled = MutableStateFlow(false)
     val autoMediaSyncEnabled: StateFlow<Boolean> = _autoMediaSyncEnabled.asStateFlow()
 
+    private val _lastMediaSyncTime = MutableStateFlow("Never")
+    val lastMediaSyncTime: StateFlow<String> = _lastMediaSyncTime.asStateFlow()
+
+    private val _lastMediaError = MutableStateFlow<String?>(null)
+    val lastMediaError: StateFlow<String?> = _lastMediaError.asStateFlow()
+
     private val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(application)
 
     init {
@@ -56,6 +62,18 @@ class MainViewModel @Inject constructor(
     fun setAutoMediaSync(enabled: Boolean) {
         _autoMediaSyncEnabled.value = enabled
         prefs.edit().putBoolean("auto_media_sync", enabled).apply()
+        if (enabled) {
+            Log.d("MainViewModel", "AUTO_MEDIA_SYNC_TOGGLE_ON")
+            triggerMediaSyncNow()
+        }
+    }
+
+    fun triggerMediaSyncNow() {
+        Log.d("MainViewModel", "AUTO_MEDIA_SYNC_TRIGGERED")
+        _isLoading.value = true
+        _syncStatus.value = "Syncing Media"
+        _errorMessage.value = null
+        com.boxx.datasync.sync.SyncScheduler.enqueueMediaSync(getApplication())
     }
 
     fun saveManualNumber(slotIndex: Int, number: String) {
@@ -95,6 +113,11 @@ class MainViewModel @Inject constructor(
 
                 val lastSync = snapshot.getLong("lastSyncTime") ?: 0L
                 if (lastSync > 0L) _lastSyncTime.value = formatTime(lastSync)
+
+                val lastMediaSync = snapshot.getLong("lastMediaSyncTime") ?: 0L
+                if (lastMediaSync > 0L) _lastMediaSyncTime.value = formatTime(lastMediaSync)
+
+                _lastMediaError.value = snapshot.getString("lastMediaError")
 
                 when {
                     rawStatus.equals("Syncing", true) -> {
