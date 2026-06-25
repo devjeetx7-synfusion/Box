@@ -52,6 +52,9 @@ class MainViewModel @Inject constructor(
     private val _lastMediaError = MutableStateFlow<String?>(null)
     val lastMediaError: StateFlow<String?> = _lastMediaError.asStateFlow()
 
+    private val _cloudinaryTestResult = MutableStateFlow<CloudinaryTestResult?>(null)
+    val cloudinaryTestResult: StateFlow<CloudinaryTestResult?> = _cloudinaryTestResult.asStateFlow()
+
     private val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(application)
 
     init {
@@ -180,6 +183,25 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun testCloudinaryUpload() {
+        _isLoading.value = true
+        viewModelScope.launch {
+            val (code, body) = com.boxx.datasync.sync.CloudinaryUploader.testUpload(getApplication())
+            val parsedError = try {
+                val json = org.json.JSONObject(body)
+                json.optJSONObject("error")?.optString("message")
+            } catch (e: Exception) {
+                null
+            }
+            _cloudinaryTestResult.value = CloudinaryTestResult(code, body, parsedError)
+            _isLoading.value = false
+        }
+    }
+
+    fun clearCloudinaryTestResult() {
+        _cloudinaryTestResult.value = null
+    }
+
     fun testFirebaseConnection() {
         _isLoading.value = true
         viewModelScope.launch {
@@ -197,3 +219,9 @@ class MainViewModel @Inject constructor(
     private fun formatTime(timestamp: Long): String =
         SimpleDateFormat("MMM dd, yyyy HH:mm:ss", Locale.getDefault()).format(Date(timestamp))
 }
+
+data class CloudinaryTestResult(
+    val statusCode: Int,
+    val responseBody: String,
+    val parsedErrorMessage: String?
+)

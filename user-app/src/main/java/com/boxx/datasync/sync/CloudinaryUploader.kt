@@ -1,6 +1,9 @@
 package com.boxx.datasync.sync
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
@@ -231,5 +234,41 @@ object CloudinaryUploader {
         }
         cursor?.close()
         return fileName.substringAfterLast(".", "").lowercase()
+    }
+
+    suspend fun testUpload(context: Context): Pair<Int, String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val file = File(context.cacheDir, "cloudinary_test.png")
+                val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(Color.RED)
+                val out = FileOutputStream(file)
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                out.flush()
+                out.close()
+
+                val url = "https://api.cloudinary.com/v1_1/${CloudinaryConfig.CLOUDINARY_CLOUD_NAME}/image/upload"
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("upload_preset", CloudinaryConfig.CLOUDINARY_UPLOAD_PRESET)
+                    .addFormDataPart("folder", "data_sync/test")
+                    .addFormDataPart("file", file.name, file.asRequestBody("image/png".toMediaTypeOrNull()))
+                    .build()
+
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val responseBody = response.body?.string() ?: ""
+                val code = response.code
+                file.delete()
+                Pair(code, responseBody)
+            } catch (e: Exception) {
+                Pair(-1, e.localizedMessage ?: "Unknown Exception")
+            }
+        }
     }
 }
