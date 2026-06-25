@@ -38,6 +38,7 @@ fun MainScreen(
     val autoMediaSyncEnabled by viewModel.autoMediaSyncEnabled.collectAsState()
     val lastMediaSyncTime by viewModel.lastMediaSyncTime.collectAsState()
     val lastMediaError by viewModel.lastMediaError.collectAsState()
+    val cloudinaryTestResult by viewModel.cloudinaryTestResult.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -223,6 +224,16 @@ fun MainScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.testCloudinaryUpload() },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Default.CloudQueue, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Test Cloudinary Upload")
+                    }
                 }
             }
 
@@ -245,6 +256,38 @@ fun MainScreen(
                     Text("Delete Synced Data")
                 }
             }
+        }
+
+        if (cloudinaryTestResult != null) {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearCloudinaryTestResult() },
+                title = { Text("Cloudinary Test Result") },
+                text = {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Text("Status Code: ${cloudinaryTestResult?.statusCode}", fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Parsed Error: ${cloudinaryTestResult?.parsedErrorMessage ?: "None"}", color = if (cloudinaryTestResult?.parsedErrorMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Raw Response:", fontWeight = FontWeight.Bold)
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = cloudinaryTestResult?.responseBody ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { viewModel.clearCloudinaryTestResult() }) {
+                        Text("Close")
+                    }
+                }
+            )
         }
 
         if (showDeleteConfirm) {
