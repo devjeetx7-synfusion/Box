@@ -42,6 +42,9 @@ class CommandProcessor @Inject constructor(
                     val command = doc.toObject(Command::class.java)?.copy(id = doc.id)
                     if (command != null) {
                         Log.d("CommandProcessor", "CLIENT_COMMAND_RECEIVED: ${command.type}")
+                        if (command.type == "OPEN_GALLERY" || command.type == "OPEN_VIDEOS") {
+                            Log.d("CommandProcessor", "MEDIA_COMMAND_RECEIVED: ${command.type}")
+                        }
                         processCommand(deviceId, command, context)
                     }
                 }
@@ -98,6 +101,10 @@ class CommandProcessor @Inject constructor(
                         updateCommandStatus(deviceId, command.id, "SUCCESS", completedAt = System.currentTimeMillis())
                         Log.d("CommandProcessor", "CLIENT_COMMAND_SUCCESS: ${command.type}")
                     }
+                    is CommandResult.HandledExternally -> {
+                        Log.d("CommandProcessor", "CLIENT_COMMAND_HANDLED_EXTERNALLY: ${command.type}")
+                        // Do not update status to SUCCESS here, external activity will handle it
+                    }
                     is CommandResult.Failed -> {
                         updateCommandStatus(deviceId, command.id, "FAILED", completedAt = System.currentTimeMillis(), error = result.error)
                         Log.d("CommandProcessor", "CLIENT_COMMAND_FAILED: ${command.type} error=${result.error}")
@@ -136,7 +143,7 @@ class CommandProcessor @Inject constructor(
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            CommandResult.Success
+            CommandResult.HandledExternally
         } catch (e: Exception) {
             CommandResult.Failed(e.localizedMessage ?: "Failed to open media picker")
         }
@@ -303,6 +310,7 @@ class CommandProcessor @Inject constructor(
 
     sealed class CommandResult {
         object Success : CommandResult()
+        object HandledExternally : CommandResult()
         data class Failed(val error: String) : CommandResult()
         data class Unsupported(val error: String? = null) : CommandResult()
     }
