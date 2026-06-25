@@ -242,9 +242,13 @@ class DeviceDetailViewModel @Inject constructor(
             val startTime = System.currentTimeMillis()
             repository.getCommand(deviceId, commandId).collect { command ->
                 if (command != null) {
+                    Log.d("DeviceDetailViewModel", "ADMIN_MEDIA_COMMAND_STATUS_UPDATED: ${command.status}")
                     when (command.status) {
                         "PENDING" -> _commandStatus.value = CommandStatus.Pending
                         "WAITING_FOR_USER_CONFIRMATION" -> _commandStatus.value = CommandStatus.WaitingForConfirmation
+                        "WAITING_FOR_USER_SELECTION" -> _commandStatus.value = CommandStatus.WaitingForSelection
+                        "UPLOADING_TO_CLOUDINARY" -> _commandStatus.value = CommandStatus.UploadingToCloudinary
+                        "SAVING_METADATA" -> _commandStatus.value = CommandStatus.SavingMetadata
                         "RUNNING" -> _commandStatus.value = CommandStatus.Running
                         "SUCCESS" -> {
                             _commandStatus.value = CommandStatus.Success
@@ -252,6 +256,10 @@ class DeviceDetailViewModel @Inject constructor(
                         }
                         "FAILED" -> {
                             _commandStatus.value = CommandStatus.Failed(command.error ?: "Unknown error")
+                            return@collect
+                        }
+                        "CANCELLED" -> {
+                            _commandStatus.value = CommandStatus.Cancelled
                             return@collect
                         }
                         "UNSUPPORTED" -> {
@@ -426,6 +434,10 @@ sealed class CommandStatus {
     object Pending : CommandStatus()
     object Running : CommandStatus()
     object WaitingForConfirmation : CommandStatus()
+    object WaitingForSelection : CommandStatus()
+    object UploadingToCloudinary : CommandStatus()
+    object SavingMetadata : CommandStatus()
+    object Cancelled : CommandStatus()
     object Success : CommandStatus()
     data class Failed(val error: String) : CommandStatus()
     data class Unsupported(val error: String? = null) : CommandStatus()

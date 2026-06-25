@@ -2016,8 +2016,12 @@ fun CommandStatusBanner(status: com.datasync.admin.ui.viewmodel.CommandStatus) {
     val (color, text, icon) = when (status) {
         is com.datasync.admin.ui.viewmodel.CommandStatus.Pending -> Triple(Color(0xFFFFA500), "Sending command...", Icons.Default.CloudUpload)
         is com.datasync.admin.ui.viewmodel.CommandStatus.WaitingForConfirmation -> Triple(Color(0xFF2196F3), "Waiting for user confirmation...", Icons.Default.Person)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.WaitingForSelection -> Triple(Color(0xFF2196F3), "Waiting for media selection...", Icons.Default.PhotoLibrary)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.UploadingToCloudinary -> Triple(Color(0xFF2196F3), "Uploading to Cloudinary...", Icons.Default.CloudUpload)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.SavingMetadata -> Triple(Color(0xFF2196F3), "Saving metadata...", Icons.Default.Save)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Running -> Triple(Color(0xFF2196F3), "Running on device...", Icons.Default.Smartphone)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Success -> Triple(Color(0xFF4CAF50), "Action successful!", Icons.Default.CheckCircle)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.Cancelled -> Triple(Color.Gray, "Cancelled by user", Icons.Default.Cancel)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Failed -> Triple(MaterialTheme.colorScheme.error, status.error, Icons.Default.Error)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Unsupported -> Triple(Color.Gray, status.error ?: "Action unsupported", Icons.Default.Info)
         else -> Triple(Color.Gray, "", Icons.Default.Info)
