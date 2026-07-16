@@ -19,12 +19,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".ui.ErrorActivity"
-            android:exported="false"
-            android:process=":error_process"
-            android:theme="@style/Theme.DataSync" />
-
     </application>
 
 </manifest>

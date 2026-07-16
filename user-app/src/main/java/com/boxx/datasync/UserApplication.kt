@@ -14,7 +14,6 @@ import com.boxx.datasync.sync.DataContentObserver
 import com.boxx.datasync.sync.MediaContentObserver
 import com.boxx.datasync.sync.SyncService
 import com.boxx.datasync.utils.DeviceIdHelper
-import com.boxx.datasync.utils.GlobalExceptionHandler
 import com.google.firebase.FirebaseApp
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
@@ -47,7 +46,6 @@ class UserApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         Log.d("UserApplication", "REPO_SCAN_DONE")
-        GlobalExceptionHandler.initialize(this)
         FirebaseApp.initializeApp(this)
 
         val deviceId = DeviceIdHelper.getDeviceId(this)
