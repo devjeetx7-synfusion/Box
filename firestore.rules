@@ -21,7 +21,7 @@ service cloud.firestore {
                                'syncRequestedAt', 'forceFullSyncRequestedAt', 'syncStatus', 'lastError', 'lastMediaError', 'lastMediaErrorStage',
                                'contactCount', 'smsCount', 'callCount', 'notificationCount', 'mediaDiscoveredCount', 'mediaUploadedCount', 'mediaFailedCount',
                                'sim1Carrier', 'sim2Carrier', 'sim1Number', 'sim2Number', 'sim1SubscriptionId', 'sim2SubscriptionId', 'sim1Ready', 'sim2Ready',
-                               'ownerName', 'ownerPhone', 'ownerEmail', 'ownerCity', 'profileUpdatedAt', 'firebaseWriteVerifiedAt'])
+                               'ownerName', 'ownerPhone', 'ownerEmail', 'ownerCity', 'ownerState', 'profileUpdatedAt', 'profileRevision', 'firebaseWriteVerifiedAt'])
                    );
     }
 

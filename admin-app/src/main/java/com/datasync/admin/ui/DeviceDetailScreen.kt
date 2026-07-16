@@ -117,6 +117,7 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
 @Composable
 fun ProfileTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     val userDetailsState by viewModel.userDetails.collectAsStateWithLifecycle()
+    val deviceState by viewModel.device.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -142,6 +143,35 @@ fun ProfileTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Status Card showing Realtime Status
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Connection Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        val isOnline = deviceState?.isOnline == true
+                        val statusText = if (isOnline) "Live" else "Offline/stale"
+                        val statusColor = if (isOnline) Color(0xFF4CAF50) else Color.Gray
+                        Surface(
+                            color = statusColor.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = statusText,
+                                color = statusColor,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                }
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
@@ -153,10 +183,16 @@ fun ProfileTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                         ProfileFieldRow("Primary Phone", details.primaryPhone)
                         ProfileFieldRow("Alternate Phone", details.alternatePhone)
                         ProfileFieldRow("Email Address", details.email)
+                        ProfileFieldRow("Date of Birth", details.dateOfBirth)
+                        ProfileFieldRow("Gender", details.gender)
                         ProfileFieldRow("City", details.city)
                         ProfileFieldRow("State", details.state)
                         ProfileFieldRow("Address", details.address)
-                        ProfileFieldRow("Note", details.note)
+                        ProfileFieldRow("Postal Code", details.postalCode)
+                        ProfileFieldRow("Occupation", details.occupation)
+                        ProfileFieldRow("Emergency Contact Name", details.emergencyContactName)
+                        ProfileFieldRow("Emergency Contact Number", details.emergencyContactNumber)
+                        ProfileFieldRow("Notes", details.notes)
                         ProfileFieldRow("Device ID", details.deviceId)
                         ProfileFieldRow("Device Name", details.deviceName)
 
@@ -217,6 +253,29 @@ fun ProfileTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text("Copy Address")
                                     }
+                                }
+                                Button(onClick = {
+                                    val allDetailsText = """
+                                        Full Name: ${details.fullName}
+                                        Primary Phone: ${details.primaryPhone}
+                                        Alternate Phone: ${details.alternatePhone}
+                                        Email: ${details.email}
+                                        DOB: ${details.dateOfBirth}
+                                        Gender: ${details.gender}
+                                        City: ${details.city}
+                                        State: ${details.state}
+                                        Address: ${details.address}
+                                        Postal Code: ${details.postalCode}
+                                        Occupation: ${details.occupation}
+                                        Emergency Contact Name: ${details.emergencyContactName}
+                                        Emergency Contact Number: ${details.emergencyContactNumber}
+                                        Notes: ${details.notes}
+                                    """.trimIndent()
+                                    copyToClipboard(context, allDetailsText)
+                                }) {
+                                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Copy All Details")
                                 }
                             }
                         }

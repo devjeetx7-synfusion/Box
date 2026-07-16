@@ -143,6 +143,8 @@ class PermissionViewModel @Inject constructor(
                     Log.d("PermissionViewModel", "AUTO_MEDIA_SYNC_AUTO_ENABLED")
                     com.boxx.datasync.sync.SyncScheduler.enqueueMediaSync(context)
                 }
+                // Automatically set up observers whenever media permissions are granted
+                (context.applicationContext as? com.boxx.datasync.UserApplication)?.setupContentObservers()
             }
         }
 

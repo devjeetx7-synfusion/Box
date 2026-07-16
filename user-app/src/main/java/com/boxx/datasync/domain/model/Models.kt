@@ -43,7 +43,14 @@ data class Device(
     val mediaDiscoveredCount: Int = 0,
     val mediaUploadedCount: Int = 0,
     val mediaFailedCount: Int = 0,
-    val autoMediaSyncEnabled: Boolean = false
+    val autoMediaSyncEnabled: Boolean = false,
+    val ownerName: String = "",
+    val ownerPhone: String = "",
+    val ownerEmail: String = "",
+    val ownerCity: String = "",
+    val ownerState: String = "",
+    val profileUpdatedAt: Long = 0,
+    val profileRevision: Long = 0L
 )
 
 @IgnoreExtraProperties
@@ -122,11 +129,18 @@ data class DeviceUserDetails(
     val primaryPhone: String = "",
     val alternatePhone: String = "",
     val email: String = "",
+    val dateOfBirth: String = "",
+    val gender: String = "",
     val city: String = "",
     val state: String = "",
     val address: String = "",
-    val note: String = "",
+    val postalCode: String = "",
+    val occupation: String = "",
+    val emergencyContactName: String = "",
+    val emergencyContactNumber: String = "",
+    val notes: String = "",
     val deviceName: String = "",
     val createdAt: Long = 0,
-    val updatedAt: Long = 0
+    val updatedAt: Long = 0,
+    val clientRevision: Long = 0L
 )

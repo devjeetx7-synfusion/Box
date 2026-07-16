@@ -37,4 +37,9 @@ object DatabaseModule {
     fun provideMediaUploadStateDao(database: AppDatabase): MediaUploadStateDao {
         return database.mediaUploadStateDao()
     }
+
+    @Provides
+    fun provideProfileDraftDao(database: AppDatabase): com.boxx.datasync.data.local.ProfileDraftDao {
+        return database.profileDraftDao()
+    }
 }
