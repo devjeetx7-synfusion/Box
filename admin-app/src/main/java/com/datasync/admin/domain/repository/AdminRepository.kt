@@ -19,4 +19,5 @@ interface AdminRepository {
     suspend fun deleteMedia(deviceId: String, mediaId: String)
     suspend fun deleteAllItems(deviceId: String, collection: String)
     suspend fun deleteDevice(deviceId: String)
+    fun getUserDetails(deviceId: String): Flow<DeviceUserDetails?>
 }

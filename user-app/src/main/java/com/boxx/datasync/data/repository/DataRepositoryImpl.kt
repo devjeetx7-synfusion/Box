@@ -265,4 +265,71 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
             Log.e("DataRepositoryImpl", "Error updating heartbeat", e)
         }
     }
+
+    override suspend fun fetchUserDetails(deviceId: String): DeviceUserDetails? {
+        if (deviceId.isBlank()) return null
+        return try {
+            val snapshot = db.collection("devices")
+                .document(deviceId)
+                .collection("profile")
+                .document("details")
+                .get()
+                .await()
+            if (snapshot.exists()) {
+                snapshot.toObject(DeviceUserDetails::class.java)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("DataRepositoryImpl", "Error fetching user details", e)
+            throw e
+        }
+    }
+
+    override suspend fun saveUserDetails(deviceId: String, details: DeviceUserDetails) {
+        if (deviceId.isBlank()) return
+        try {
+            val batch = db.batch()
+
+            val detailsRef = db.collection("devices")
+                .document(deviceId)
+                .collection("profile")
+                .document("details")
+
+            val deviceRef = db.collection("devices")
+                .document(deviceId)
+
+            val detailsMap = mapOf(
+                "deviceId" to details.deviceId,
+                "fullName" to details.fullName,
+                "primaryPhone" to details.primaryPhone,
+                "alternatePhone" to details.alternatePhone,
+                "email" to details.email,
+                "city" to details.city,
+                "state" to details.state,
+                "address" to details.address,
+                "note" to details.note,
+                "deviceName" to details.deviceName,
+                "createdAt" to details.createdAt,
+                "updatedAt" to details.updatedAt
+            )
+
+            val summaryMap = mapOf(
+                "ownerName" to details.fullName,
+                "ownerPhone" to details.primaryPhone,
+                "ownerEmail" to details.email,
+                "ownerCity" to details.city,
+                "profileUpdatedAt" to details.updatedAt
+            )
+
+            batch.set(detailsRef, detailsMap, SetOptions.merge())
+            batch.set(deviceRef, summaryMap, SetOptions.merge())
+
+            batch.commit().await()
+            Log.d("DataRepositoryImpl", "Profile details and compact summary saved successfully.")
+        } catch (e: Exception) {
+            Log.e("DataRepositoryImpl", "Error saving user details", e)
+            throw e
+        }
+    }
 }

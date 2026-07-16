@@ -15,10 +15,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 sealed class PermissionUiState {
     object Checking : PermissionUiState()
     object RequestRuntime : PermissionUiState()
-    object DeniedRetry : PermissionUiState()
+    data class TempDenied(val deniedPermissions: List<PermissionInfo>) : PermissionUiState()
+    data class PermDenied(val deniedPermissions: List<PermissionInfo>) : PermissionUiState()
     object NeedNotificationListener : PermissionUiState()
-    object NeedRestrictedSettings : PermissionUiState()
-    object NeedAppSettings : PermissionUiState()
     object Ready : PermissionUiState()
 }
 
@@ -37,8 +36,6 @@ class PermissionViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<PermissionUiState>(PermissionUiState.Checking)
     val uiState: StateFlow<PermissionUiState> = _uiState.asStateFlow()
-
-    private var hasShownRestrictedGuide = false
 
     init {
         val list = mutableListOf(
@@ -79,7 +76,7 @@ class PermissionViewModel @Inject constructor(
             )
         )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(PermissionInfo(
                 "MEDIA_IMAGES", "Images",
                 "Access images to backup your gallery.",
@@ -90,30 +87,16 @@ class PermissionViewModel @Inject constructor(
                 "Access videos to backup your gallery.",
                 "VideoLibrary", Manifest.permission.READ_MEDIA_VIDEO
             ))
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             list.add(PermissionInfo(
-                "MEDIA_IMAGES", "Images",
-                "Access images to backup your gallery.",
-                "PhotoLibrary", Manifest.permission.READ_MEDIA_IMAGES
-            ))
-            list.add(PermissionInfo(
-                "MEDIA_VIDEO", "Videos",
-                "Access videos to backup your gallery.",
-                "VideoLibrary", Manifest.permission.READ_MEDIA_VIDEO
+                "NOTIFICATIONS", "Notifications",
+                "Required to show sync status in the notification bar.",
+                "Notifications", Manifest.permission.POST_NOTIFICATIONS
             ))
         } else {
             list.add(PermissionInfo(
                 "STORAGE", "Storage",
                 "Access storage to backup your gallery.",
                 "Storage", Manifest.permission.READ_EXTERNAL_STORAGE
-            ))
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            list.add(PermissionInfo(
-                "NOTIFICATIONS", "Notifications",
-                "Required to show sync status in the notification bar.",
-                "Notifications", Manifest.permission.POST_NOTIFICATIONS
             ))
         }
 
@@ -130,7 +113,9 @@ class PermissionViewModel @Inject constructor(
         ))
 
         _permissions.value = list
-        refreshStatuses()
+        // Do an initial check of statuses based on context
+        val initialStatuses = list.associate { it.id to handler.getStatus(it) }
+        _statuses.value = initialStatuses
     }
 
     fun refreshStatuses(activity: Activity? = null, isFromLauncher: Boolean = false) {
@@ -144,39 +129,47 @@ class PermissionViewModel @Inject constructor(
         val currentPermissions = _permissions.value
         val currentStatuses = _statuses.value
 
+        // Check if auto media sync preference should be updated automatically
+        activity?.let { context ->
+            val mediaImagesAllowed = handler.getStatus(currentPermissions.find { it.id == "MEDIA_IMAGES" } ?: PermissionInfo("", "", "", "", "")) == PermissionStatus.GRANTED ||
+                    handler.getStatus(currentPermissions.find { it.id == "STORAGE" } ?: PermissionInfo("", "", "", "", "")) == PermissionStatus.GRANTED
+            val mediaVideosAllowed = handler.getStatus(currentPermissions.find { it.id == "MEDIA_VIDEO" } ?: PermissionInfo("", "", "", "", "")) == PermissionStatus.GRANTED ||
+                    handler.getStatus(currentPermissions.find { it.id == "STORAGE" } ?: PermissionInfo("", "", "", "", "")) == PermissionStatus.GRANTED
+
+            if (mediaImagesAllowed || mediaVideosAllowed) {
+                val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                if (!prefs.getBoolean("auto_media_sync", false)) {
+                    prefs.edit().putBoolean("auto_media_sync", true).apply()
+                    Log.d("PermissionViewModel", "AUTO_MEDIA_SYNC_AUTO_ENABLED")
+                    com.boxx.datasync.sync.SyncScheduler.enqueueMediaSync(context)
+                }
+            }
+        }
+
         // 1. Check runtime permissions
         val runtimePermissions = currentPermissions.filter { !it.isSpecial && it.permission != null }
         val deniedRuntime = runtimePermissions.filter { (currentStatuses[it.id] ?: PermissionStatus.DENIED) != PermissionStatus.GRANTED }
 
         if (deniedRuntime.isNotEmpty()) {
-            val permanentlyDenied = activity?.let { act ->
-                deniedRuntime.any { handler.isPermanentlyDenied(act, it) }
-            } ?: false
+            if (activity == null) {
+                _uiState.value = PermissionUiState.RequestRuntime
+                return
+            }
 
-            // If they are permanently denied
-            if (permanentlyDenied) {
-                // Check if we should show Restricted Settings Guide first
-                // Guide ONLY for SMS/Call permissions that are restricted
-                val restrictedPermissionsMissing = deniedRuntime.filter { it.id.startsWith("SMS") || it.id.startsWith("CALL") }
+            // Group denied permissions into permanently denied and temporarily denied
+            val permDeniedList = deniedRuntime.filter { handler.isPermanentlyDenied(activity, it) }
+            val tempDeniedList = deniedRuntime.filter { !handler.isPermanentlyDenied(activity, it) }
 
-                if (restrictedPermissionsMissing.isNotEmpty() && !hasShownRestrictedGuide) {
-                    Log.d("PermissionFlow", "RESTRICTED_SETTINGS_REQUIRED")
-                    Log.d("PermissionFlow", "RESTRICTED_PERMISSION_GUIDE_ONLY_WHEN_BLOCKED")
-                    _uiState.value = PermissionUiState.NeedRestrictedSettings
-                } else {
-                    Log.d("PermissionFlow", "RUNTIME_PERMISSION_PERMANENTLY_DENIED")
-                    Log.d("PermissionFlow", "OPEN_SETTINGS_ONLY_AFTER_PERMANENT_DENIAL")
-                    _uiState.value = PermissionUiState.NeedAppSettings
-                }
+            // If we have any temporarily denied permissions (meaning they were denied at least once but can still request normally)
+            if (isFromLauncher && tempDeniedList.isNotEmpty()) {
+                Log.d("PermissionFlow", "RUNTIME_PERMISSION_TEMP_DENIED")
+                _uiState.value = PermissionUiState.TempDenied(tempDeniedList)
+            } else if (permDeniedList.isNotEmpty()) {
+                Log.d("PermissionFlow", "RUNTIME_PERMISSION_PERMANENTLY_DENIED")
+                _uiState.value = PermissionUiState.PermDenied(permDeniedList)
             } else {
                 Log.d("PermissionFlow", "RUNTIME_PERMISSION_REQUESTABLE")
-                if (isFromLauncher) {
-                    Log.d("PermissionFlow", "RUNTIME_PERMISSION_DENIED")
-                    _uiState.value = PermissionUiState.DeniedRetry
-                } else {
-                    Log.d("PermissionFlow", "RUNTIME_PERMISSION_DIRECT_REQUEST")
-                    _uiState.value = PermissionUiState.RequestRuntime
-                }
+                _uiState.value = PermissionUiState.RequestRuntime
             }
             return
         }
@@ -191,21 +184,8 @@ class PermissionViewModel @Inject constructor(
             return
         }
 
-        // 3. Optional Battery Optimization check is informational only and doesn't block PermissionUiState.Ready.
-        val batteryOpt = currentPermissions.find { it.id == "BATTERY_OPTIMIZATION" }
-        if (batteryOpt != null && (currentStatuses[batteryOpt.id] ?: PermissionStatus.DENIED) != PermissionStatus.GRANTED) {
-            Log.d("PermissionFlow", "BATTERY_OPTIMIZATION_OPTIONAL_ONLY")
-            // We do NOT set uiState to NeedBatteryOptimization anymore to unblock the main flow.
-        }
-
         Log.d("PermissionFlow", "PERMISSION_FLOW_READY")
         _uiState.value = PermissionUiState.Ready
-    }
-
-    fun markRestrictedGuideShown() {
-        hasShownRestrictedGuide = true
-        // Re-evaluate state, will likely move to NeedAppSettings if still denied
-        _uiState.value = PermissionUiState.NeedAppSettings
     }
 
     fun areAllRequiredGranted(): Boolean {

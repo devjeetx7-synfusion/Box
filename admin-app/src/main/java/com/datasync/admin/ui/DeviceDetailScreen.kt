@@ -114,25 +114,150 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
     }
 }
 
+@Composable
+fun ProfileTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
+    val userDetailsState by viewModel.userDetails.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        val details = userDetailsState
+        if (details == null) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.PersonOutline, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.outline)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("User details not added", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.outline)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { viewModel.requestSync() }) {
+                    Text("Retry / Refresh")
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Profile Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                        ProfileFieldRow("Full Name", details.fullName)
+                        ProfileFieldRow("Primary Phone", details.primaryPhone)
+                        ProfileFieldRow("Alternate Phone", details.alternatePhone)
+                        ProfileFieldRow("Email Address", details.email)
+                        ProfileFieldRow("City", details.city)
+                        ProfileFieldRow("State", details.state)
+                        ProfileFieldRow("Address", details.address)
+                        ProfileFieldRow("Note", details.note)
+                        ProfileFieldRow("Device ID", details.deviceId)
+                        ProfileFieldRow("Device Name", details.deviceName)
+
+                        val updateTimeStr = if (details.updatedAt > 0L) com.datasync.admin.utils.DataUtils.formatDate(details.updatedAt) else "Unknown"
+                        ProfileFieldRow("Last Updated", updateTimeStr)
+                    }
+                }
+
+                // Actions Section
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (details.primaryPhone.isNotBlank()) {
+                                    Button(onClick = { copyToClipboard(context, details.primaryPhone) }) {
+                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Copy Phone")
+                                    }
+                                    Button(onClick = {
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${details.primaryPhone}"))
+                                        context.startActivity(intent)
+                                    }) {
+                                        Icon(Icons.Default.Call, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Call")
+                                    }
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (details.primaryPhone.isNotBlank()) {
+                                    Button(onClick = {
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:${details.primaryPhone}"))
+                                        context.startActivity(intent)
+                                    }) {
+                                        Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Send SMS")
+                                    }
+                                }
+                                if (details.email.isNotBlank()) {
+                                    Button(onClick = { copyToClipboard(context, details.email) }) {
+                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Copy Email")
+                                    }
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (details.address.isNotBlank()) {
+                                    Button(onClick = { copyToClipboard(context, details.address) }) {
+                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Copy Address")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileFieldRow(label: String, value: String) {
+    if (value.isNotBlank()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(value, style = MaterialTheme.typography.bodyLarge)
+            HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetailViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 5 })
+    val pagerState = rememberPagerState(pageCount = { 6 })
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     val tabs = listOf(
-        TabItem("Contacts", Icons.Default.Person),
+        TabItem("Profile", Icons.Default.Person),
+        TabItem("Contacts", Icons.Default.ContactPhone),
         TabItem("Messages", Icons.Default.Email),
         TabItem("Notifications", Icons.Default.Notifications),
         TabItem("Calls", Icons.Default.Call),
         TabItem("Media", Icons.Default.PhotoLibrary)
     )
 
-    val listStates = List(5) { rememberLazyListState() }
+    val listStates = List(6) { rememberLazyListState() }
 
     val showScrollToTop by remember {
         derivedStateOf {
@@ -339,11 +464,12 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                         verticalAlignment = Alignment.Top
                     ) { page ->
                         when (page) {
-                            0 -> ContactsTab(viewModel, listStates[0])
-                            1 -> MessagesTab(viewModel, listStates[1])
-                            2 -> NotificationsTab(viewModel, listStates[2])
-                            3 -> CallsTab(viewModel, listStates[3])
-                            4 -> MediaTab(viewModel, listStates[4])
+                            0 -> ProfileTab(viewModel, listStates[0])
+                            1 -> ContactsTab(viewModel, listStates[1])
+                            2 -> MessagesTab(viewModel, listStates[2])
+                            3 -> NotificationsTab(viewModel, listStates[3])
+                            4 -> CallsTab(viewModel, listStates[4])
+                            5 -> MediaTab(viewModel, listStates[5])
                         }
                     }
                 }
