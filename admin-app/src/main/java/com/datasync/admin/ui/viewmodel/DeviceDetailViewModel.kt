@@ -395,6 +395,13 @@ class DeviceDetailViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), mapOf("All" to 0))
     }
 
+    val userDetails: StateFlow<DeviceUserDetails?> = if (deviceId.isBlank()) {
+        MutableStateFlow<DeviceUserDetails?>(null).asStateFlow()
+    } else {
+        repository.getUserDetails(deviceId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }
+
     val media: StateFlow<TabUiState<MediaData>> = if (deviceId.isBlank()) {
         MutableStateFlow(TabUiState.Empty).asStateFlow()
     } else {

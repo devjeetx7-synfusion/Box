@@ -240,7 +240,6 @@ class UserApplication : Application(), Configuration.Provider {
             contentResolver.unregisterContentObserver(mObserver)
 
             val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-            val autoMediaSync = prefs.getBoolean("auto_media_sync", false)
 
             val mediaImagesAllowed = isPermissionGranted(android.Manifest.permission.READ_MEDIA_IMAGES) ||
                     isPermissionGranted(android.Manifest.permission.READ_EXTERNAL_STORAGE) ||
@@ -252,12 +251,22 @@ class UserApplication : Application(), Configuration.Provider {
                     (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
                             isPermissionGranted(android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
 
-            if (autoMediaSync && (mediaImagesAllowed || mediaVideosAllowed)) {
+            val hasMediaPermission = mediaImagesAllowed || mediaVideosAllowed
+
+            if (hasMediaPermission) {
+                if (!prefs.getBoolean("auto_media_sync", false)) {
+                    prefs.edit().putBoolean("auto_media_sync", true).apply()
+                    Log.d("UserApplication", "auto_media_sync set to true automatically as media permission is granted")
+                    com.boxx.datasync.sync.SyncScheduler.enqueueMediaSync(this)
+                }
                 Log.d("UserApplication", "Registering Media ContentObservers")
                 contentResolver.registerContentObserver(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mObserver)
                 contentResolver.registerContentObserver(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, mObserver)
             } else {
-                Log.d("UserApplication", "Media ContentObservers unregistered - Auto Media Sync is OFF or permissions missing")
+                if (prefs.getBoolean("auto_media_sync", false)) {
+                    prefs.edit().putBoolean("auto_media_sync", false).apply()
+                }
+                Log.d("UserApplication", "Media ContentObservers unregistered - permissions missing")
             }
         } catch (e: Exception) {
             Log.e("UserApplication", "Failed to register Media ContentObserver", e)

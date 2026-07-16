@@ -45,7 +45,12 @@ data class Device(
     val mediaDiscoveredCount: Int = 0,
     val mediaUploadedCount: Int = 0,
     val mediaFailedCount: Int = 0,
-    val autoMediaSyncEnabled: Boolean = false
+    val autoMediaSyncEnabled: Boolean = false,
+    val ownerName: String = "",
+    val ownerPhone: String = "",
+    val ownerEmail: String = "",
+    val ownerCity: String = "",
+    val profileUpdatedAt: Long = 0
 ) {
     val isOnline: Boolean
         get() = System.currentTimeMillis() - heartbeatAt < 5 * 60 * 1000 // 5 minutes
@@ -90,6 +95,22 @@ data class NotificationData(
     val iconBase64: String = "",
     val sender: String = "",
     val conversationId: String? = null
+)
+
+@IgnoreExtraProperties
+data class DeviceUserDetails(
+    val deviceId: String = "",
+    val fullName: String = "",
+    val primaryPhone: String = "",
+    val alternatePhone: String = "",
+    val email: String = "",
+    val city: String = "",
+    val state: String = "",
+    val address: String = "",
+    val note: String = "",
+    val deviceName: String = "",
+    val createdAt: Long = 0,
+    val updatedAt: Long = 0
 )
 
 @IgnoreExtraProperties

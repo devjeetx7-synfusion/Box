@@ -25,7 +25,7 @@ class MainViewModel @Inject constructor(
     private val repository: DataRepository
 ) : AndroidViewModel(application) {
 
-    private val _syncStatus = MutableStateFlow("Idle")
+    private val _syncStatus = MutableStateFlow("Ready")
     val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
 
     private val _lastSyncTime = MutableStateFlow("Never")
@@ -42,9 +42,6 @@ class MainViewModel @Inject constructor(
 
     private val _simInfo = MutableStateFlow<Map<String, Any>>(emptyMap())
     val simInfo: StateFlow<Map<String, Any>> = _simInfo.asStateFlow()
-
-    private val _autoMediaSyncEnabled = MutableStateFlow(false)
-    val autoMediaSyncEnabled: StateFlow<Boolean> = _autoMediaSyncEnabled.asStateFlow()
 
     private val _lastMediaSyncTime = MutableStateFlow("Never")
     val lastMediaSyncTime: StateFlow<String> = _lastMediaSyncTime.asStateFlow()
@@ -70,27 +67,60 @@ class MainViewModel @Inject constructor(
     private val _cloudinaryTestResult = MutableStateFlow<CloudinaryTestResult?>(null)
     val cloudinaryTestResult: StateFlow<CloudinaryTestResult?> = _cloudinaryTestResult.asStateFlow()
 
-    private val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(application)
+    private val _userDetails = MutableStateFlow<com.boxx.datasync.domain.model.DeviceUserDetails?>(null)
+    val userDetails: StateFlow<com.boxx.datasync.domain.model.DeviceUserDetails?> = _userDetails.asStateFlow()
+
+    private val _isSavingDetails = MutableStateFlow(false)
+    val isSavingDetails: StateFlow<Boolean> = _isSavingDetails.asStateFlow()
+
+    private val _detailsSaveError = MutableStateFlow<String?>(null)
+    val detailsSaveError: StateFlow<String?> = _detailsSaveError.asStateFlow()
+
+    private val _detailsSaveSuccess = MutableStateFlow(false)
+    val detailsSaveSuccess: StateFlow<Boolean> = _detailsSaveSuccess.asStateFlow()
 
     init {
-        _autoMediaSyncEnabled.value = prefs.getBoolean("auto_media_sync", false)
         observeFirestore()
+        loadUserDetails()
     }
 
-    fun setAutoMediaSync(enabled: Boolean) {
-        _autoMediaSyncEnabled.value = enabled
-        prefs.edit().putBoolean("auto_media_sync", enabled).apply()
-
-        // Setup content observers dynamically when toggle is clicked
-        (getApplication() as? com.boxx.datasync.UserApplication)?.setupContentObservers()
-
-        if (enabled) {
-            Log.d("MainViewModel", "AUTO_MEDIA_SYNC_TOGGLE_ON")
-            triggerMediaSyncNow()
-        } else {
-            Log.d("MainViewModel", "AUTO_MEDIA_SYNC_TOGGLE_OFF - cancelling pending work")
-            androidx.work.WorkManager.getInstance(getApplication()).cancelUniqueWork(com.boxx.datasync.sync.SyncScheduler.MEDIA_SYNC_NAME)
+    fun loadUserDetails() {
+        viewModelScope.launch {
+            try {
+                val details = repository.fetchUserDetails(deviceId)
+                _userDetails.value = details
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to load user details", e)
+                _detailsSaveError.value = "Failed to load profile: ${e.localizedMessage ?: "Unknown Error"}"
+            }
         }
+    }
+
+    fun saveUserDetails(details: com.boxx.datasync.domain.model.DeviceUserDetails, onResult: (Boolean, String?) -> Unit) {
+        if (_isSavingDetails.value) return
+        _isSavingDetails.value = true
+        _detailsSaveError.value = null
+        _detailsSaveSuccess.value = false
+        viewModelScope.launch {
+            try {
+                repository.saveUserDetails(deviceId, details)
+                _userDetails.value = details
+                _detailsSaveSuccess.value = true
+                _isSavingDetails.value = false
+                onResult(true, null)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to save user details", e)
+                val errMsg = e.localizedMessage ?: "Unknown Firestore Error"
+                _detailsSaveError.value = "Firestore profile save failed: $errMsg"
+                _isSavingDetails.value = false
+                onResult(false, errMsg)
+            }
+        }
+    }
+
+    fun clearDetailsSnackbarState() {
+        _detailsSaveError.value = null
+        _detailsSaveSuccess.value = false
     }
 
     fun triggerMediaSyncNow() {
@@ -119,7 +149,7 @@ class MainViewModel @Inject constructor(
                 }
 
                 if (snapshot == null || !snapshot.exists()) {
-                    _syncStatus.value = "Idle"
+                    _syncStatus.value = "Ready"
                     _isLoading.value = false
                     return@addSnapshotListener
                 }
@@ -185,7 +215,7 @@ class MainViewModel @Inject constructor(
                             timeoutJob?.cancel()
                         }
                         else -> {
-                            _syncStatus.value = "Idle"
+                            _syncStatus.value = "Ready"
                             _isLoading.value = false
                             if (!lastError.isNullOrBlank()) _errorMessage.value = lastError
                         }
@@ -231,7 +261,7 @@ class MainViewModel @Inject constructor(
                 }
             } catch (_: Exception) {}
             _isLoading.value = false
-            _syncStatus.value = "Idle"
+            _syncStatus.value = "Ready"
         }
     }
 

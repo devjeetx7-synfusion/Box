@@ -281,4 +281,26 @@ class AdminRepositoryImpl @Inject constructor(
             Log.e("AdminRepositoryImpl", "Error deleting device $deviceId", e)
         }
     }
+
+    override fun getUserDetails(deviceId: String): Flow<DeviceUserDetails?> {
+        Log.d("AdminRepositoryImpl", "getUserDetails: devices/$deviceId/profile/details")
+        if (deviceId.isBlank()) return kotlinx.coroutines.flow.flowOf(null)
+        return db.collection("devices")
+            .document(deviceId)
+            .collection("profile")
+            .document("details")
+            .snapshots()
+            .map { snapshot ->
+                if (snapshot.exists()) {
+                    snapshot.toObject(DeviceUserDetails::class.java)
+                } else {
+                    null
+                }
+            }
+            .catch { e ->
+                Log.e("AdminRepositoryImpl", "Error listening to user details for $deviceId", e)
+                emit(null)
+            }
+            .distinctUntilChanged()
+    }
 }

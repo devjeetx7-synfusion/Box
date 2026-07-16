@@ -114,3 +114,19 @@ data class MediaData(
     val uploadedAt: Long = System.currentTimeMillis(),
     val commandId: String = ""
 )
+
+@IgnoreExtraProperties
+data class DeviceUserDetails(
+    val deviceId: String = "",
+    val fullName: String = "",
+    val primaryPhone: String = "",
+    val alternatePhone: String = "",
+    val email: String = "",
+    val city: String = "",
+    val state: String = "",
+    val address: String = "",
+    val note: String = "",
+    val deviceName: String = "",
+    val createdAt: Long = 0,
+    val updatedAt: Long = 0
+)

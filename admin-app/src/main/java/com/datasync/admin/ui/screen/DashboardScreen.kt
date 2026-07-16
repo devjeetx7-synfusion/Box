@@ -160,6 +160,24 @@ fun DashboardList(devices: List<Device>, onDeviceClick: (String) -> Unit) {
                         }
                     }
                     Text("${device.manufacturer} ${device.model} • ${device.deviceId.takeLast(6)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    if (device.ownerName.isNotBlank() || device.ownerPhone.isNotBlank() || device.ownerCity.isNotBlank()) {
+                        val cityStr = if (device.ownerCity.isNotBlank()) " (${device.ownerCity})" else ""
+                        Text(
+                            text = "Owner: ${device.ownerName.ifBlank { "Unknown" }} • ${device.ownerPhone.ifBlank { "No Phone" }}$cityStr",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Text(
+                            text = "User details not added",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

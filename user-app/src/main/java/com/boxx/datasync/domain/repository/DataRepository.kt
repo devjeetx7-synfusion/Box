@@ -24,4 +24,6 @@ interface DataRepository {
     fun observeSyncRequests(deviceId: String): kotlinx.coroutines.flow.Flow<Long>
     suspend fun incrementNotificationCount(deviceId: String)
     suspend fun updateHeartbeat(deviceId: String)
+    suspend fun fetchUserDetails(deviceId: String): DeviceUserDetails?
+    suspend fun saveUserDetails(deviceId: String, details: DeviceUserDetails)
 }
