@@ -165,16 +165,15 @@ class MediaPickerLauncherActivity : ComponentActivity() {
                     Toast.makeText(this@MediaPickerLauncherActivity, "Upload complete", Toast.LENGTH_SHORT).show()
                     finish()
                 }
-                is MediaUploadResult.Failed -> {
+                is MediaUploadResult.Failure -> {
                     isUploading = false
                     errorMessage = result.message
                     rawError = result.rawResponse
 
                     val stageText = when(result.stage) {
-                        "URI_COPY_FAILED" -> "Failed to process selected file"
-                        "CLOUDINARY_UPLOAD_FAILED" -> "Cloudinary upload failed"
-                        "FIRESTORE_METADATA_FAILED" -> "Metadata sync failed"
-                        "DUPLICATE_SKIPPED" -> "Media already synced"
+                        com.boxx.datasync.sync.MediaFailureStage.TEMP_FILE_COPY -> "Failed to process selected file"
+                        com.boxx.datasync.sync.MediaFailureStage.CLOUDINARY_HTTP -> "Cloudinary upload failed"
+                        com.boxx.datasync.sync.MediaFailureStage.FIRESTORE_METADATA -> "Metadata sync failed"
                         else -> "Upload failed"
                     }
 

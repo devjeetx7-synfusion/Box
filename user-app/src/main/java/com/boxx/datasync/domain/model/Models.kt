@@ -37,7 +37,13 @@ data class Device(
     val callRequestSimSlot: Int = 0,
     val forceFullSyncRequestedAt: Long = 0,
     val lastMediaSyncTime: Long = 0,
-    val lastMediaError: String? = null
+    val lastMediaError: String? = null,
+    val lastMediaScanAt: Long = 0,
+    val lastMediaSyncAt: Long = 0,
+    val mediaDiscoveredCount: Int = 0,
+    val mediaUploadedCount: Int = 0,
+    val mediaFailedCount: Int = 0,
+    val autoMediaSyncEnabled: Boolean = false
 )
 
 @IgnoreExtraProperties
@@ -85,6 +91,8 @@ data class NotificationData(
 data class MediaData(
     val id: String = "",
     val deviceId: String = "",
+    val localMediaKey: String = "",
+    val mediaStoreId: String = "",
     val type: String = "", // "image" or "video"
     val url: String = "",
     val secureUrl: String = "",
@@ -92,12 +100,16 @@ data class MediaData(
     val publicId: String = "",
     val resourceType: String = "",
     val fileName: String = "",
+    val mimeType: String = "",
     val sizeBytes: Long = 0,
     val format: String = "",
     val width: Int = 0,
     val height: Int = 0,
     val duration: Double? = null,
     val source: String = "",
+    val dateAdded: Long = 0,
+    val dateModified: Long = 0,
+    val uploadStatus: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val uploadedAt: Long = System.currentTimeMillis(),
     val commandId: String = ""

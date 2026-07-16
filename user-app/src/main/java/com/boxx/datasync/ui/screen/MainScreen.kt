@@ -37,7 +37,12 @@ fun MainScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val autoMediaSyncEnabled by viewModel.autoMediaSyncEnabled.collectAsState()
     val lastMediaSyncTime by viewModel.lastMediaSyncTime.collectAsState()
+    val lastMediaScanTime by viewModel.lastMediaScanTime.collectAsState()
+    val mediaDiscoveredCount by viewModel.mediaDiscoveredCount.collectAsState()
+    val mediaUploadedCount by viewModel.mediaUploadedCount.collectAsState()
+    val mediaFailedCount by viewModel.mediaFailedCount.collectAsState()
     val lastMediaError by viewModel.lastMediaError.collectAsState()
+    val lastMediaErrorStage by viewModel.lastMediaErrorStage.collectAsState()
     val cloudinaryTestResult by viewModel.cloudinaryTestResult.collectAsState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -103,10 +108,10 @@ fun MainScreen(
                     CircularProgressIndicator(modifier = Modifier.fillMaxSize())
                 } else {
                     Icon(
-                        imageVector = if (syncStatus == "Up to date") Icons.Default.CheckCircle else Icons.Default.Refresh,
+                        imageVector = if (syncStatus == "Synced") Icons.Default.CheckCircle else Icons.Default.Refresh,
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
-                        tint = if (syncStatus == "Up to date") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                        tint = if (syncStatus == "Synced") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                     )
                 }
             }
@@ -172,16 +177,32 @@ fun MainScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Media Sync Error", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                            Text("Media Sync Error (${lastMediaErrorStage ?: "Unknown"})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                             Text(mError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                         }
                     }
-                    OutlinedButton(onClick = {
-                        copyToClipboard(context, "Device ID: $deviceId\nLast Media Sync: $lastMediaSyncTime\nMedia Error: $mError")
-                    }) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Copy Debug Info")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.triggerMediaSyncNow() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Retry Failed Media")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                copyToClipboard(context, "Device ID: $deviceId\nLast Media Sync: $lastMediaSyncTime\nStage: $lastMediaErrorStage\nMedia Error: $mError")
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy Debug Info")
+                        }
                     }
                 }
             }
@@ -193,7 +214,12 @@ fun MainScreen(
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     InfoRow(label = "Device ID", value = deviceId)
                     InfoRow(label = "Last Synced", value = lastSyncTime)
-                    InfoRow(label = "Last Media", value = lastMediaSyncTime)
+                    InfoRow(label = "Last Media Scan", value = lastMediaScanTime)
+                    InfoRow(label = "Last Media Sync", value = lastMediaSyncTime)
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                    InfoRow(label = "Media Discovered", value = mediaDiscoveredCount.toString())
+                    InfoRow(label = "Media Uploaded", value = mediaUploadedCount.toString())
+                    InfoRow(label = "Media Failed", value = mediaFailedCount.toString())
                 }
             }
 
@@ -319,4 +345,3 @@ fun InfoRow(label: String, value: String) {
         Text(value, fontWeight = FontWeight.Bold)
     }
 }
-

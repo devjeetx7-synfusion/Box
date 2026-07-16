@@ -40,18 +40,15 @@ class SyncService : Service() {
         serviceScope.launch {
             try {
                 syncCoordinator.performSync(this@SyncService, isFullSync)
+            } catch (e: Exception) {
+                Log.e("SyncService", "Error performing sync in service", e)
             } finally {
                 if (activeRequests.decrementAndGet() == 0) {
                     Log.d("SyncService", "FOREGROUND_SYNC_STOPPED")
-                    stopSelf()
+                    stopSelfResult(startId)
                 } else {
                     Log.d("SyncService", "FOREGROUND_SYNC_CONTINUING - pending requests exist")
-                    // If we use stopSelf(startId), it might stop even if other tasks are running in the same coordinator loop.
-                    // But here we use activeRequests to only stop when all started intents are "done".
-                    // Actually stopSelf(startId) is the correct Android way if we want to be precise about intents.
-                    // But since our coordinator handles multiple triggers in one loop, we just need to ensure the service
-                    // stays alive as long as ANY thread is still in performSync.
-                    stopSelf(startId)
+                    stopSelfResult(startId)
                 }
             }
         }

@@ -351,10 +351,15 @@ class MainActivity : ComponentActivity() {
 
     private fun startSyncService(context: android.content.Context) {
         val intent = Intent(context, SyncService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Foreground service start not allowed. Falling back to WorkManager.", e)
+            com.boxx.datasync.sync.SyncScheduler.enqueueIncremental(context)
         }
         (applicationContext as? UserApplication)?.setupContentObservers()
     }

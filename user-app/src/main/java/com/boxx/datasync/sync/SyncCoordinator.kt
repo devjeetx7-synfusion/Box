@@ -16,7 +16,7 @@ class SyncCoordinator @Inject constructor(
     private var isPendingSync = false
     private var pendingFullSync = false
 
-    suspend fun performSync(context: Context, isFullSync: Boolean) {
+    suspend fun performSync(context: Context, isFullSync: Boolean): SyncResult {
         // We always set pending flags even if we are the one who will acquire the lock,
         // it doesn't hurt as we clear them inside the loop.
         synchronized(this) {
@@ -24,7 +24,7 @@ class SyncCoordinator @Inject constructor(
                 isPendingSync = true
                 if (isFullSync) pendingFullSync = true
                 Log.d("SyncCoordinator", "SYNC_ALREADY_RUNNING_PENDING_SET")
-                return
+                return SyncResult.Success // Or return previous run's result, Success is safe for non-blocking trigger
             }
         }
 
@@ -32,6 +32,7 @@ class SyncCoordinator @Inject constructor(
         mutex.withLock {
             Log.d("SyncCoordinator", "SYNC_COORDINATOR_LOCK_ACQUIRED")
             var currentFullSync = isFullSync
+            var finalResult: SyncResult = SyncResult.Success
 
             while (true) {
                 val fullSyncToRun = synchronized(this) {
@@ -42,17 +43,18 @@ class SyncCoordinator @Inject constructor(
                 }
 
                 try {
-                    syncEngine.runSync(context, fullSyncToRun)
+                    finalResult = syncEngine.runSync(context, fullSyncToRun)
                 } catch (e: CancellationException) {
                     Log.e("SyncCoordinator", "SYNC_CANCELLED_REASON: ${e.message}")
                     throw e
                 } catch (e: Exception) {
                     Log.e("SyncCoordinator", "Sync failed in coordinator loop", e)
+                    finalResult = SyncResult.Error(e.localizedMessage ?: "Unknown Coordinator Error")
                 }
 
                 synchronized(this) {
                     if (!isPendingSync) {
-                        return@withLock
+                        return finalResult
                     }
                     Log.d("SyncCoordinator", "PENDING_SYNC_STARTED")
                 }

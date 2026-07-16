@@ -2232,6 +2232,7 @@ fun getCallTypeColor(type: Int): Color {
 fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
     val state by viewModel.media.collectAsStateWithLifecycle()
     val filter by viewModel.mediaFilter.collectAsStateWithLifecycle()
+    val device by viewModel.device.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var showActionSheet by remember { mutableStateOf(false) }
@@ -2273,6 +2274,41 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
             }
         }
 
+        // Detailed Device Media Status Dashboard Card (Phases 13 & 14)
+        Card(
+            modifier = Modifier.padding(8.dp).fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Media Sync Engine", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Auto Media Sync", style = MaterialTheme.typography.bodySmall)
+                    Text(if (device?.autoMediaSyncEnabled == true) "Enabled" else "Disabled", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, color = if (device?.autoMediaSyncEnabled == true) Color(0xFF4CAF50) else Color.Gray)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Engine Status", style = MaterialTheme.typography.bodySmall)
+                    Text(device?.mediaSyncStatus ?: "Idle", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Last Media Scan", style = MaterialTheme.typography.bodySmall)
+                    Text(if (device?.lastMediaScanAt != 0L) formatDate(device?.lastMediaScanAt ?: 0, true) else "Never", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Last Media Sync", style = MaterialTheme.typography.bodySmall)
+                    Text(if (device?.lastMediaSyncAt != 0L) formatDate(device?.lastMediaSyncAt ?: 0, true) else "Never", style = MaterialTheme.typography.bodySmall)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Discovered / Synced / Failed", style = MaterialTheme.typography.bodySmall)
+                    Text("${device?.mediaDiscoveredCount ?: 0} / ${device?.mediaUploadedCount ?: 0} / ${device?.mediaFailedCount ?: 0}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                }
+                if (device?.lastMediaError != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Error: ${device?.lastMediaError}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    Text("Stage: ${device?.lastMediaErrorStage ?: "UNKNOWN"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+
         when (val uiState = state) {
             is TabUiState.Loading -> {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2280,35 +2316,19 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             }
             is TabUiState.Empty -> {
-                val device by viewModel.device.collectAsStateWithLifecycle()
                 Column(modifier = Modifier.fillMaxSize()) {
-                    if (device?.lastMediaError != null) {
-                        Card(
-                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("Last Media Sync Error", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                                Text(device?.lastMediaError ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick = { viewModel.requestSync() }, modifier = Modifier.height(32.dp)) {
-                                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Retry", fontSize = 11.sp)
-                                    }
-                                    OutlinedButton(onClick = {
-                                        copyToClipboard(context, "Device ID: ${device?.deviceId}\nMedia Error: ${device?.lastMediaError}")
-                                    }, modifier = Modifier.height(32.dp)) {
-                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copy Debug", fontSize = 11.sp)
-                                    }
-                                }
-                            }
-                        }
+                    val emptyMsg = when {
+                        device?.autoMediaSyncEnabled == false -> "Auto Media Sync disabled in User app settings."
+                        device?.lastMediaErrorStage == "PERMISSION" -> "Media permission missing on Client device."
+                        device?.lastMediaErrorStage == "MEDIASTORE_QUERY" -> "No local media found."
+                        device?.lastMediaErrorStage == "NETWORK" -> "Waiting for network on Client device."
+                        device?.mediaSyncStatus?.startsWith("Uploading") == true -> "Upload in progress on Client device..."
+                        device?.lastMediaErrorStage == "CLOUDINARY_HTTP" -> "Cloudinary failure: ${device?.lastMediaError}"
+                        device?.lastMediaErrorStage == "FIRESTORE_METADATA" -> "Firestore metadata failure"
+                        device?.mediaDiscoveredCount == 0 -> "No local media found"
+                        else -> "No successful uploads yet. Check Client app status."
                     }
-                    EmptyState("No media uploaded yet. Check User app Auto Media Sync status.")
+                    EmptyState(emptyMsg)
                 }
             }
             is TabUiState.Error -> {
@@ -2317,20 +2337,6 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             }
             is TabUiState.Success -> {
-                val device by viewModel.device.collectAsStateWithLifecycle()
-                Column(modifier = Modifier.fillMaxSize()) {
-                    if (device?.lastMediaError != null) {
-                        Card(
-                            modifier = Modifier.padding(8.dp).fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                        ) {
-                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Partial Sync Error: ${device?.lastMediaError}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(110.dp),
                     contentPadding = PaddingValues(8.dp),
@@ -2349,7 +2355,6 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                             }
                         )
                     }
-                }
                 }
             }
         }
