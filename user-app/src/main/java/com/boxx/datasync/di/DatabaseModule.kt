@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.boxx.datasync.data.local.AppDatabase
 import com.boxx.datasync.data.local.NotificationDao
+import com.boxx.datasync.data.local.MediaUploadStateDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,11 +23,18 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "data_sync_db"
-        ).build()
+        )
+        .fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides
     fun provideNotificationDao(database: AppDatabase): NotificationDao {
         return database.notificationDao()
+    }
+
+    @Provides
+    fun provideMediaUploadStateDao(database: AppDatabase): MediaUploadStateDao {
+        return database.mediaUploadStateDao()
     }
 }

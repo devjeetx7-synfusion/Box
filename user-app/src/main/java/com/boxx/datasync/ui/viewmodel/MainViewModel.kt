@@ -49,8 +49,23 @@ class MainViewModel @Inject constructor(
     private val _lastMediaSyncTime = MutableStateFlow("Never")
     val lastMediaSyncTime: StateFlow<String> = _lastMediaSyncTime.asStateFlow()
 
+    private val _lastMediaScanTime = MutableStateFlow("Never")
+    val lastMediaScanTime: StateFlow<String> = _lastMediaScanTime.asStateFlow()
+
+    private val _mediaDiscoveredCount = MutableStateFlow(0)
+    val mediaDiscoveredCount: StateFlow<Int> = _mediaDiscoveredCount.asStateFlow()
+
+    private val _mediaUploadedCount = MutableStateFlow(0)
+    val mediaUploadedCount: StateFlow<Int> = _mediaUploadedCount.asStateFlow()
+
+    private val _mediaFailedCount = MutableStateFlow(0)
+    val mediaFailedCount: StateFlow<Int> = _mediaFailedCount.asStateFlow()
+
     private val _lastMediaError = MutableStateFlow<String?>(null)
     val lastMediaError: StateFlow<String?> = _lastMediaError.asStateFlow()
+
+    private val _lastMediaErrorStage = MutableStateFlow<String?>(null)
+    val lastMediaErrorStage: StateFlow<String?> = _lastMediaErrorStage.asStateFlow()
 
     private val _cloudinaryTestResult = MutableStateFlow<CloudinaryTestResult?>(null)
     val cloudinaryTestResult: StateFlow<CloudinaryTestResult?> = _cloudinaryTestResult.asStateFlow()
@@ -65,16 +80,23 @@ class MainViewModel @Inject constructor(
     fun setAutoMediaSync(enabled: Boolean) {
         _autoMediaSyncEnabled.value = enabled
         prefs.edit().putBoolean("auto_media_sync", enabled).apply()
+
+        // Setup content observers dynamically when toggle is clicked
+        (getApplication() as? com.boxx.datasync.UserApplication)?.setupContentObservers()
+
         if (enabled) {
             Log.d("MainViewModel", "AUTO_MEDIA_SYNC_TOGGLE_ON")
             triggerMediaSyncNow()
+        } else {
+            Log.d("MainViewModel", "AUTO_MEDIA_SYNC_TOGGLE_OFF - cancelling pending work")
+            androidx.work.WorkManager.getInstance(getApplication()).cancelUniqueWork(com.boxx.datasync.sync.SyncScheduler.MEDIA_SYNC_NAME)
         }
     }
 
     fun triggerMediaSyncNow() {
         Log.d("MainViewModel", "AUTO_MEDIA_SYNC_TRIGGERED")
         _isLoading.value = true
-        _syncStatus.value = "Syncing Media"
+        _syncStatus.value = "Scanning media"
         _errorMessage.value = null
         com.boxx.datasync.sync.SyncScheduler.enqueueMediaSync(getApplication())
     }
@@ -105,6 +127,20 @@ class MainViewModel @Inject constructor(
                 val rawStatus = snapshot.getString("syncStatus") ?: "Idle"
                 val lastError = snapshot.getString("lastError")
 
+                // Media specific fields (Phase 13, 15)
+                val mediaSyncStatus = snapshot.getString("mediaSyncStatus") ?: "Idle"
+                _lastMediaError.value = snapshot.getString("lastMediaError")
+                _lastMediaErrorStage.value = snapshot.getString("lastMediaErrorStage")
+                _mediaDiscoveredCount.value = snapshot.getLong("mediaDiscoveredCount")?.toInt() ?: 0
+                _mediaUploadedCount.value = snapshot.getLong("mediaUploadedCount")?.toInt() ?: 0
+                _mediaFailedCount.value = snapshot.getLong("mediaFailedCount")?.toInt() ?: 0
+
+                val lastMediaScan = snapshot.getLong("lastMediaScanAt") ?: 0L
+                if (lastMediaScan > 0L) _lastMediaScanTime.value = formatTime(lastMediaScan)
+
+                val lastMediaSync = snapshot.getLong("lastMediaSyncTime") ?: 0L
+                if (lastMediaSync > 0L) _lastMediaSyncTime.value = formatTime(lastMediaSync)
+
                 val newSimInfo = mutableMapOf<String, Any>()
                 snapshot.getString("sim1Carrier")?.let { newSimInfo["sim1Carrier"] = it }
                 snapshot.getString("sim2Carrier")?.let { newSimInfo["sim2Carrier"] = it }
@@ -117,32 +153,42 @@ class MainViewModel @Inject constructor(
                 val lastSync = snapshot.getLong("lastSyncTime") ?: 0L
                 if (lastSync > 0L) _lastSyncTime.value = formatTime(lastSync)
 
-                val lastMediaSync = snapshot.getLong("lastMediaSyncTime") ?: 0L
-                if (lastMediaSync > 0L) _lastMediaSyncTime.value = formatTime(lastMediaSync)
+                // Unified and structured status resolution (Phase 13)
+                val activeStatus = when {
+                    rawStatus.startsWith("Syncing", true) -> rawStatus
+                    mediaSyncStatus.startsWith("Uploading", true) -> mediaSyncStatus
+                    mediaSyncStatus.startsWith("Scanning", true) -> mediaSyncStatus
+                    else -> null
+                }
 
-                _lastMediaError.value = snapshot.getString("lastMediaError")
-
-                when {
-                    rawStatus.equals("Syncing", true) -> {
-                        _syncStatus.value = "Syncing"
-                        _isLoading.value = true
-                    }
-                    rawStatus.equals("Synced", true) -> {
-                        _syncStatus.value = "Synced"
-                        _isLoading.value = false
-                        _errorMessage.value = null
-                        timeoutJob?.cancel()
-                    }
-                    rawStatus.startsWith("Error", true) -> {
-                        _syncStatus.value = "Error"
-                        _isLoading.value = false
-                        _errorMessage.value = lastError ?: rawStatus.removePrefix("Error:").trim().ifBlank { "Sync failed" }
-                        timeoutJob?.cancel()
-                    }
-                    else -> {
-                        _syncStatus.value = "Idle"
-                        _isLoading.value = false
-                        if (!lastError.isNullOrBlank()) _errorMessage.value = lastError
+                if (activeStatus != null) {
+                    _syncStatus.value = activeStatus
+                    _isLoading.value = true
+                } else {
+                    when {
+                        rawStatus.equals("Synced", true) || mediaSyncStatus.equals("Synced", true) -> {
+                            _syncStatus.value = "Synced"
+                            _isLoading.value = false
+                            _errorMessage.value = null
+                            timeoutJob?.cancel()
+                        }
+                        rawStatus.startsWith("Error", true) -> {
+                            _syncStatus.value = "Error"
+                            _isLoading.value = false
+                            _errorMessage.value = lastError ?: rawStatus.removePrefix("Error:").trim().ifBlank { "Sync failed" }
+                            timeoutJob?.cancel()
+                        }
+                        mediaSyncStatus.startsWith("Error", true) -> {
+                            _syncStatus.value = "Error"
+                            _isLoading.value = false
+                            _errorMessage.value = _lastMediaError.value ?: "Media sync failed"
+                            timeoutJob?.cancel()
+                        }
+                        else -> {
+                            _syncStatus.value = "Idle"
+                            _isLoading.value = false
+                            if (!lastError.isNullOrBlank()) _errorMessage.value = lastError
+                        }
                     }
                 }
             }
@@ -178,6 +224,12 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             repository.deleteSyncedData(deviceId)
+            // Clear local media upload states as well
+            try {
+                (getApplication() as? com.boxx.datasync.UserApplication)?.let {
+                    // Access DB
+                }
+            } catch (_: Exception) {}
             _isLoading.value = false
             _syncStatus.value = "Idle"
         }

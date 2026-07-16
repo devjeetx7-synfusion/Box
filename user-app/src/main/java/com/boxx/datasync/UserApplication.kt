@@ -11,6 +11,7 @@ import androidx.work.Configuration
 import com.boxx.datasync.domain.repository.DataRepository
 import com.boxx.datasync.sync.CommandProcessor
 import com.boxx.datasync.sync.DataContentObserver
+import com.boxx.datasync.sync.MediaContentObserver
 import com.boxx.datasync.sync.SyncService
 import com.boxx.datasync.utils.DeviceIdHelper
 import com.boxx.datasync.utils.GlobalExceptionHandler
@@ -36,6 +37,7 @@ class UserApplication : Application(), Configuration.Provider {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var heartbeatJob: Job? = null
     private var dataContentObserver: DataContentObserver? = null
+    private var mediaContentObserver: MediaContentObserver? = null
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -211,8 +213,12 @@ class UserApplication : Application(), Configuration.Provider {
         if (dataContentObserver == null) {
             dataContentObserver = DataContentObserver(this)
         }
+        if (mediaContentObserver == null) {
+            mediaContentObserver = MediaContentObserver(this)
+        }
 
         val observer = dataContentObserver ?: return
+        val mObserver = mediaContentObserver ?: return
 
         try {
             contentResolver.unregisterContentObserver(observer)
@@ -227,7 +233,34 @@ class UserApplication : Application(), Configuration.Provider {
                 contentResolver.registerContentObserver(android.provider.CallLog.Calls.CONTENT_URI, true, observer)
             }
         } catch (e: Exception) {
-            Log.e("UserApplication", "Failed to register ContentObserver", e)
+            Log.e("UserApplication", "Failed to register Data ContentObserver", e)
+        }
+
+        try {
+            contentResolver.unregisterContentObserver(mObserver)
+
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val autoMediaSync = prefs.getBoolean("auto_media_sync", false)
+
+            val mediaImagesAllowed = isPermissionGranted(android.Manifest.permission.READ_MEDIA_IMAGES) ||
+                    isPermissionGranted(android.Manifest.permission.READ_EXTERNAL_STORAGE) ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                            isPermissionGranted(android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
+
+            val mediaVideosAllowed = isPermissionGranted(android.Manifest.permission.READ_MEDIA_VIDEO) ||
+                    isPermissionGranted(android.Manifest.permission.READ_EXTERNAL_STORAGE) ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                            isPermissionGranted(android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED))
+
+            if (autoMediaSync && (mediaImagesAllowed || mediaVideosAllowed)) {
+                Log.d("UserApplication", "Registering Media ContentObservers")
+                contentResolver.registerContentObserver(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mObserver)
+                contentResolver.registerContentObserver(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, mObserver)
+            } else {
+                Log.d("UserApplication", "Media ContentObservers unregistered - Auto Media Sync is OFF or permissions missing")
+            }
+        } catch (e: Exception) {
+            Log.e("UserApplication", "Failed to register Media ContentObserver", e)
         }
     }
 
@@ -235,10 +268,15 @@ class UserApplication : Application(), Configuration.Provider {
         val intent = Intent(this, SyncService::class.java).apply {
             putExtra(com.boxx.datasync.sync.SyncScheduler.KEY_FULL_SYNC, isFullSync)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.w("UserApplication", "Foreground service start not allowed. Falling back to WorkManager.", e)
+            com.boxx.datasync.sync.SyncScheduler.enqueueIncremental(this)
         }
     }
 
