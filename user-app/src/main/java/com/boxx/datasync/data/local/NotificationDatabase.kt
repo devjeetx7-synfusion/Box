@@ -81,8 +81,46 @@ interface MediaUploadStateDao {
     suspend fun deleteAll()
 }
 
-@Database(entities = [NotificationEntity::class, MediaUploadStateEntity::class], version = 2, exportSchema = false)
+@Entity(tableName = "profile_draft")
+data class ProfileDraftEntity(
+    @PrimaryKey val id: String = "profile_singleton",
+    val fullName: String = "",
+    val primaryPhone: String = "",
+    val alternatePhone: String = "",
+    val email: String = "",
+    val dateOfBirth: String = "",
+    val gender: String = "",
+    val city: String = "",
+    val state: String = "",
+    val address: String = "",
+    val postalCode: String = "",
+    val occupation: String = "",
+    val emergencyContactName: String = "",
+    val emergencyContactNumber: String = "",
+    val notes: String = "",
+    val localRevision: Long = 0L,
+    val isPendingSync: Boolean = false,
+    val lastSyncedRevision: Long = 0L
+)
+
+@Dao
+interface ProfileDraftDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(draft: ProfileDraftEntity)
+
+    @Query("SELECT * FROM profile_draft WHERE id = 'profile_singleton'")
+    suspend fun getDraft(): ProfileDraftEntity?
+
+    @Query("SELECT * FROM profile_draft WHERE id = 'profile_singleton'")
+    fun getDraftFlow(): kotlinx.coroutines.flow.Flow<ProfileDraftEntity?>
+
+    @Query("DELETE FROM profile_draft")
+    suspend fun deleteDraft()
+}
+
+@Database(entities = [NotificationEntity::class, MediaUploadStateEntity::class, ProfileDraftEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun notificationDao(): NotificationDao
     abstract fun mediaUploadStateDao(): MediaUploadStateDao
+    abstract fun profileDraftDao(): ProfileDraftDao
 }

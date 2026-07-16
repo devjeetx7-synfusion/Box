@@ -172,7 +172,7 @@ fun DashboardList(devices: List<Device>, onDeviceClick: (String) -> Unit) {
                         )
                     } else {
                         Text(
-                            text = "User details not added",
+                            text = "Personal details not added",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Normal,
                             color = MaterialTheme.colorScheme.outline

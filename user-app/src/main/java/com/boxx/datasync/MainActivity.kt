@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
     private val permissionViewModel: PermissionViewModel by viewModels()
+    private val personalDetailsViewModel: com.boxx.datasync.ui.viewmodel.PersonalDetailsViewModel by viewModels()
 
     @Inject
     lateinit var repository: DataRepository
@@ -95,7 +96,8 @@ class MainActivity : ComponentActivity() {
                                 showSettings = {
                                     val intent = handler.getAppSettingsIntent()
                                     startActivity(intent)
-                                }
+                                },
+                                personalViewModel = personalDetailsViewModel
                             )
 
                             // Overlay Permission UI (only show if user has not chosen "Not Now" / bypassed)

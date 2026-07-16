@@ -305,13 +305,20 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 "primaryPhone" to details.primaryPhone,
                 "alternatePhone" to details.alternatePhone,
                 "email" to details.email,
+                "dateOfBirth" to details.dateOfBirth,
+                "gender" to details.gender,
                 "city" to details.city,
                 "state" to details.state,
                 "address" to details.address,
-                "note" to details.note,
+                "postalCode" to details.postalCode,
+                "occupation" to details.occupation,
+                "emergencyContactName" to details.emergencyContactName,
+                "emergencyContactNumber" to details.emergencyContactNumber,
+                "notes" to details.notes,
                 "deviceName" to details.deviceName,
                 "createdAt" to details.createdAt,
-                "updatedAt" to details.updatedAt
+                "updatedAt" to details.updatedAt,
+                "clientRevision" to details.clientRevision
             )
 
             val summaryMap = mapOf(
@@ -319,7 +326,9 @@ class DataRepositoryImpl @Inject constructor() : DataRepository {
                 "ownerPhone" to details.primaryPhone,
                 "ownerEmail" to details.email,
                 "ownerCity" to details.city,
-                "profileUpdatedAt" to details.updatedAt
+                "ownerState" to details.state,
+                "profileUpdatedAt" to details.updatedAt,
+                "profileRevision" to details.clientRevision
             )
 
             batch.set(detailsRef, detailsMap, SetOptions.merge())

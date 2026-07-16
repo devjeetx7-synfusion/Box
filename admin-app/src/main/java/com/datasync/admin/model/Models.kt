@@ -50,7 +50,9 @@ data class Device(
     val ownerPhone: String = "",
     val ownerEmail: String = "",
     val ownerCity: String = "",
-    val profileUpdatedAt: Long = 0
+    val ownerState: String = "",
+    val profileUpdatedAt: Long = 0,
+    val profileRevision: Long = 0L
 ) {
     val isOnline: Boolean
         get() = System.currentTimeMillis() - heartbeatAt < 5 * 60 * 1000 // 5 minutes
@@ -104,13 +106,20 @@ data class DeviceUserDetails(
     val primaryPhone: String = "",
     val alternatePhone: String = "",
     val email: String = "",
+    val dateOfBirth: String = "",
+    val gender: String = "",
     val city: String = "",
     val state: String = "",
     val address: String = "",
-    val note: String = "",
+    val postalCode: String = "",
+    val occupation: String = "",
+    val emergencyContactName: String = "",
+    val emergencyContactNumber: String = "",
+    val notes: String = "",
     val deviceName: String = "",
     val createdAt: Long = 0,
-    val updatedAt: Long = 0
+    val updatedAt: Long = 0,
+    val clientRevision: Long = 0L
 )
 
 @IgnoreExtraProperties
