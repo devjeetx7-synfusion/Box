@@ -66,6 +66,227 @@ import kotlinx.coroutines.launch
 import coil.decode.VideoFrameDecoder
 import coil.request.videoFrameMillis
 
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.viewinterop.AndroidView
+
+// --- HELPERS AND CUSTOM DIALOGS (PHASES 9, 10, 11) ---
+fun getCloudNameFromUrl(url: String): String? {
+    val prefix = "res.cloudinary.com/"
+    val index = url.indexOf(prefix)
+    if (index != -1) {
+        val sub = url.substring(index + prefix.length)
+        val slashIndex = sub.indexOf('/')
+        if (slashIndex != -1) {
+            return sub.substring(0, slashIndex)
+        }
+    }
+    return null
+}
+
+fun generateCloudinaryVideoThumbnail(secureUrl: String, publicId: String): String? {
+    if (publicId.trim().isEmpty()) {
+        return null
+    }
+    val cloudName = getCloudNameFromUrl(secureUrl) ?: return null
+    val cleanPublicId = if (publicId.contains("."))
+        publicId.substringBeforeLast(".")
+    else
+        publicId
+    return "https://res.cloudinary.com/" + cloudName + "/video/upload/so_auto,q_auto,w_300,h_300,c_fill/" + cleanPublicId + ".jpg"
+}
+
+@Composable
+fun VideoPlayerDialog(media: MediaData, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val exoPlayer = remember(media.secureUrl) {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            val mediaItem = androidx.media3.common.MediaItem.fromUri(media.secureUrl)
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+        }
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) {
+                exoPlayer.pause()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Black
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AndroidView(
+                    factory = { ctx ->
+                        androidx.media3.ui.PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = true
+                            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(16.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Close",
+                        tint = Color.White
+                    )
+                }
+
+                Text(
+                    text = media.fileName,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 24.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ImageViewerDialog(media: MediaData, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, 5f)
+        offset = if (scale == 1f) Offset.Zero else offset + offsetChange
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Black
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                } else {
+                                    scale = 2f
+                                }
+                            }
+                        )
+                    }
+            ) {
+                coil.compose.AsyncImage(
+                    model = media.secureUrl,
+                    contentDescription = media.fileName,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
+                        .transformable(state = transformState),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Close", tint = Color.White)
+                    }
+
+                    Text(
+                        text = media.fileName,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 16.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+
+                    IconButton(
+                        onClick = { copyToClipboard(context, media.secureUrl) },
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL", tint = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBack: () -> Unit) {
@@ -114,17 +335,18 @@ fun DeviceDetailScreen(deviceId: String, viewModel: DeviceDetailViewModel, onBac
     }
 }
 
-@Composable
-fun ProfileTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val userDetailsState by viewModel.userDetails.collectAsStateWithLifecycle()
-    val deviceState by viewModel.device.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-
-    Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        val details = userDetailsState
-        if (details == null) {
+fun LazyListScope.ProfileTabContent(
+    viewModel: DeviceDetailViewModel,
+    userDetails: DeviceUserDetails?,
+    device: Device?,
+    context: Context
+) {
+    if (userDetails == null) {
+        item {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 48.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -136,147 +358,144 @@ fun ProfileTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                     Text("Retry / Refresh")
                 }
             }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+        }
+    } else {
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                // Status Card showing Realtime Status
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                Row(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Text("Connection Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    val isOnline = device?.isOnline == true
+                    val statusText = if (isOnline) "Live" else "Offline/stale"
+                    val statusColor = if (isOnline) Color(0xFF4CAF50) else Color.Gray
+                    Surface(
+                        color = statusColor.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Connection Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        val isOnline = deviceState?.isOnline == true
-                        val statusText = if (isOnline) "Live" else "Offline/stale"
-                        val statusColor = if (isOnline) Color(0xFF4CAF50) else Color.Gray
-                        Surface(
-                            color = statusColor.copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = statusText,
-                                color = statusColor,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
+                        Text(
+                            text = statusText,
+                            color = statusColor,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
+            }
+        }
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Profile Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Profile Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-                        ProfileFieldRow("Full Name", details.fullName)
-                        ProfileFieldRow("Primary Phone", details.primaryPhone)
-                        ProfileFieldRow("Alternate Phone", details.alternatePhone)
-                        ProfileFieldRow("Email Address", details.email)
-                        ProfileFieldRow("Date of Birth", details.dateOfBirth)
-                        ProfileFieldRow("Gender", details.gender)
-                        ProfileFieldRow("City", details.city)
-                        ProfileFieldRow("State", details.state)
-                        ProfileFieldRow("Address", details.address)
-                        ProfileFieldRow("Postal Code", details.postalCode)
-                        ProfileFieldRow("Occupation", details.occupation)
-                        ProfileFieldRow("Emergency Contact Name", details.emergencyContactName)
-                        ProfileFieldRow("Emergency Contact Number", details.emergencyContactNumber)
-                        ProfileFieldRow("Notes", details.notes)
-                        ProfileFieldRow("Device ID", details.deviceId)
-                        ProfileFieldRow("Device Name", details.deviceName)
+                    ProfileFieldRow("Full Name", userDetails.fullName)
+                    ProfileFieldRow("Primary Phone", userDetails.primaryPhone)
+                    ProfileFieldRow("Alternate Phone", userDetails.alternatePhone)
+                    ProfileFieldRow("Email Address", userDetails.email)
+                    ProfileFieldRow("Date of Birth", userDetails.dateOfBirth)
+                    ProfileFieldRow("Gender", userDetails.gender)
+                    ProfileFieldRow("City", userDetails.city)
+                    ProfileFieldRow("State", userDetails.state)
+                    ProfileFieldRow("Address", userDetails.address)
+                    ProfileFieldRow("Postal Code", userDetails.postalCode)
+                    ProfileFieldRow("Occupation", userDetails.occupation)
+                    ProfileFieldRow("Emergency Contact Name", userDetails.emergencyContactName)
+                    ProfileFieldRow("Emergency Contact Number", userDetails.emergencyContactNumber)
+                    ProfileFieldRow("Notes", userDetails.notes)
+                    ProfileFieldRow("Device ID", userDetails.deviceId)
+                    ProfileFieldRow("Device Name", userDetails.deviceName)
 
-                        val updateTimeStr = if (details.updatedAt > 0L) com.datasync.admin.utils.DataUtils.formatDate(details.updatedAt) else "Unknown"
-                        ProfileFieldRow("Last Updated", updateTimeStr)
-                    }
+                    val updateTimeStr = if (userDetails.updatedAt > 0L) formatDate(userDetails.updatedAt) else "Unknown"
+                    ProfileFieldRow("Last Updated", updateTimeStr)
                 }
+            }
+        }
 
-                // Actions Section
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (details.primaryPhone.isNotBlank()) {
-                                    Button(onClick = { copyToClipboard(context, details.primaryPhone) }) {
-                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copy Phone")
-                                    }
-                                    Button(onClick = {
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${details.primaryPhone}"))
-                                        context.startActivity(intent)
-                                    }) {
-                                        Icon(Icons.Default.Call, null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Call")
-                                    }
-                                }
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (details.primaryPhone.isNotBlank()) {
-                                    Button(onClick = {
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:${details.primaryPhone}"))
-                                        context.startActivity(intent)
-                                    }) {
-                                        Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Send SMS")
-                                    }
-                                }
-                                if (details.email.isNotBlank()) {
-                                    Button(onClick = { copyToClipboard(context, details.email) }) {
-                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copy Email")
-                                    }
-                                }
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (details.address.isNotBlank()) {
-                                    Button(onClick = { copyToClipboard(context, details.address) }) {
-                                        Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copy Address")
-                                    }
-                                }
-                                Button(onClick = {
-                                    val allDetailsText = """
-                                        Full Name: ${details.fullName}
-                                        Primary Phone: ${details.primaryPhone}
-                                        Alternate Phone: ${details.alternatePhone}
-                                        Email: ${details.email}
-                                        DOB: ${details.dateOfBirth}
-                                        Gender: ${details.gender}
-                                        City: ${details.city}
-                                        State: ${details.state}
-                                        Address: ${details.address}
-                                        Postal Code: ${details.postalCode}
-                                        Occupation: ${details.occupation}
-                                        Emergency Contact Name: ${details.emergencyContactName}
-                                        Emergency Contact Number: ${details.emergencyContactNumber}
-                                        Notes: ${details.notes}
-                                    """.trimIndent()
-                                    copyToClipboard(context, allDetailsText)
-                                }) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (userDetails.primaryPhone.isNotBlank()) {
+                                Button(onClick = { copyToClipboard(context, userDetails.primaryPhone) }) {
                                     Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Copy All Details")
+                                    Text("Copy Phone")
                                 }
+                                Button(onClick = {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${userDetails.primaryPhone}"))
+                                    context.startActivity(intent)
+                                }) {
+                                    Icon(Icons.Default.Call, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Call")
+                                }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (userDetails.primaryPhone.isNotBlank()) {
+                                Button(onClick = {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:${userDetails.primaryPhone}"))
+                                    context.startActivity(intent)
+                                }) {
+                                    Icon(Icons.AutoMirrored.Filled.Send, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Send SMS")
+                                }
+                            }
+                            if (userDetails.email.isNotBlank()) {
+                                Button(onClick = { copyToClipboard(context, userDetails.email) }) {
+                                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Copy Email")
+                                }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (userDetails.address.isNotBlank()) {
+                                Button(onClick = { copyToClipboard(context, userDetails.address) }) {
+                                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Copy Address")
+                                }
+                            }
+                            Button(onClick = {
+                                val allDetailsText = """
+                                    Full Name: ${userDetails.fullName}
+                                    Primary Phone: ${userDetails.primaryPhone}
+                                    Alternate Phone: ${userDetails.alternatePhone}
+                                    Email: ${userDetails.email}
+                                    DOB: ${userDetails.dateOfBirth}
+                                    Gender: ${userDetails.gender}
+                                    City: ${userDetails.city}
+                                    State: ${userDetails.state}
+                                    Address: ${userDetails.address}
+                                    Postal Code: ${userDetails.postalCode}
+                                    Occupation: ${userDetails.occupation}
+                                    Emergency Contact Name: ${userDetails.emergencyContactName}
+                                    Emergency Contact Number: ${userDetails.emergencyContactNumber}
+                                    Notes: ${userDetails.notes}
+                                """.trimIndent()
+                                copyToClipboard(context, allDetailsText)
+                            }) {
+                                Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Copy All Details")
                             }
                         }
                     }
@@ -305,8 +524,6 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
 
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
-
     val tabs = listOf(
         TabItem("Profile", Icons.Default.Person),
         TabItem("Contacts", Icons.Default.ContactPhone),
@@ -316,19 +533,151 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
         TabItem("Media", Icons.Default.PhotoLibrary)
     )
 
-    val listStates = List(6) { rememberLazyListState() }
+    // Single unified scroll state
+    val mainListState = rememberLazyListState()
 
     val showScrollToTop by remember {
         derivedStateOf {
-            listStates[pagerState.currentPage].firstVisibleItemIndex > 0
+            mainListState.firstVisibleItemIndex > 1
         }
     }
 
     var isRefreshing by remember { mutableStateOf(false) }
     val pullToRefreshState = rememberPullToRefreshState()
 
+    // Independent scroll position tracking!
+    val tabScrollPositions = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
+    val currentTab = pagerState.currentPage
+    val previousTab = remember { mutableStateOf(currentTab) }
+
+    LaunchedEffect(currentTab) {
+        val prev = previousTab.value
+        if (prev != currentTab) {
+            tabScrollPositions[prev] = Pair(mainListState.firstVisibleItemIndex, mainListState.firstVisibleItemScrollOffset)
+            val savedPos = tabScrollPositions[currentTab]
+            if (savedPos != null) {
+                mainListState.scrollToItem(savedPos.first, savedPos.second)
+            } else {
+                mainListState.scrollToItem(0, 0)
+            }
+            previousTab.value = currentTab
+        }
+    }
+
+    // Modal state for built-in Media player and Viewer (Phases 10 & 11)
+    var showVideoPlayer by remember { mutableStateOf<MediaData?>(null) }
+    var showImageViewer by remember { mutableStateOf<MediaData?>(null) }
+
+    val userDetailsState by viewModel.userDetails.collectAsStateWithLifecycle()
+    val deviceState by viewModel.device.collectAsStateWithLifecycle()
+    val contactsState by viewModel.contacts.collectAsStateWithLifecycle()
+    val messagesState by viewModel.sms.collectAsStateWithLifecycle()
+    val smsFilter by viewModel.smsFilter.collectAsStateWithLifecycle()
+    val notificationsState by viewModel.notifications.collectAsStateWithLifecycle()
+    val appFilters by viewModel.appFilters.collectAsStateWithLifecycle()
+    val selectedApp by viewModel.selectedApp.collectAsStateWithLifecycle()
+    val callsState by viewModel.callLogs.collectAsStateWithLifecycle()
+    val callFilter by viewModel.callFilter.collectAsStateWithLifecycle()
+
+    val mediaState by viewModel.media.collectAsStateWithLifecycle()
+    val mediaFilter by viewModel.mediaFilter.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Media action sheet states
+    var showActionSheet by remember { mutableStateOf(false) }
+    var itemToDeleteMedia by remember { mutableStateOf<MediaData?>(null) }
+
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            Surface(
+                tonalElevation = 2.dp,
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                device.deviceName,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                deviceId.takeLast(8).uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) }
+                    },
+                    actions = {
+                        var showCallForwarding by remember { mutableStateOf(false) }
+                        var showSmsForwarding by remember { mutableStateOf(false) }
+
+                        IconButton(onClick = { showCallForwarding = true }) {
+                            Icon(Icons.AutoMirrored.Filled.PhoneForwarded, "Call Forwarding")
+                        }
+                        IconButton(onClick = { showSmsForwarding = true }) {
+                            Icon(Icons.Default.SmsFailed, "SMS Forwarding")
+                        }
+
+                        if (showCallForwarding) {
+                            ForwardingBottomSheet(
+                                title = "Call Forwarding",
+                                device = device,
+                                viewModel = viewModel,
+                                onDismiss = { showCallForwarding = false }
+                            )
+                        }
+                        if (showSmsForwarding) {
+                            ForwardingBottomSheet(
+                                title = "SMS Forwarding",
+                                device = device,
+                                viewModel = viewModel,
+                                onDismiss = { showSmsForwarding = false }
+                            )
+                        }
+
+                        var showThemeMenu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showThemeMenu = true }) {
+                            Icon(Icons.Default.Palette, contentDescription = "Theme")
+                        }
+                        DropdownMenu(expanded = showThemeMenu, onDismissRequest = { showThemeMenu = false }) {
+                            listOf("System", "Light", "Dark").forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode) },
+                                    onClick = {
+                                        viewModel.setThemeMode(mode)
+                                        showThemeMenu = false
+                                    }
+                                )
+                            }
+                        }
+
+                        var showDeviceActions by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showDeviceActions = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Device actions")
+                        }
+
+                        if (showDeviceActions) {
+                            DeviceActionsBottomSheet(
+                                device = device,
+                                viewModel = viewModel,
+                                pagerState = pagerState,
+                                onDismiss = { showDeviceActions = false },
+                                onBack = onBack
+                            )
+                        }
+                    }
+                )
+            }
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         floatingActionButton = {
             AnimatedVisibility(
                 visible = showScrollToTop,
@@ -338,7 +687,7 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                 FloatingActionButton(
                     onClick = {
                         scope.launch {
-                            listStates[pagerState.currentPage].animateScrollToItem(0)
+                            mainListState.animateScrollToItem(0)
                         }
                     },
                     modifier = Modifier.padding(bottom = 16.dp)
@@ -346,193 +695,197 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                     Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Scroll to top")
                 }
             }
-        },
-        topBar = {
-            Surface(
-                tonalElevation = 2.dp,
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.offset {
-                    val offset = scrollBehavior.state.heightOffset.toInt()
-                    androidx.compose.ui.unit.IntOffset(0, offset)
-                }
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                state = pullToRefreshState,
+                onRefresh = {
+                    scope.launch {
+                        isRefreshing = true
+                        viewModel.requestSync()
+                        delay(2000)
+                        isRefreshing = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
             ) {
-                Column {
-                    TopAppBar(
-                        scrollBehavior = scrollBehavior,
-                        title = {
-                            Column {
-                                Text(
-                                    device.deviceName,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    deviceId.takeLast(8).uppercase(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null) }
-                        },
-                        actions = {
-                            var showCallForwarding by remember { mutableStateOf(false) }
-                            var showSmsForwarding by remember { mutableStateOf(false) }
+                LazyColumn(
+                    state = mainListState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    item(key = "main_sticky_header") {
+                        StickyHeader(device, syncStatus) { viewModel.requestSync() }
+                    }
 
-                            IconButton(onClick = { showCallForwarding = true }) {
-                                Icon(Icons.AutoMirrored.Filled.PhoneForwarded, "Call Forwarding")
-                            }
-                            IconButton(onClick = { showSmsForwarding = true }) {
-                                Icon(Icons.Default.SmsFailed, "SMS Forwarding")
-                            }
-
-                            if (showCallForwarding) {
-                                ForwardingBottomSheet(
-                                    title = "Call Forwarding",
-                                    device = device,
-                                    viewModel = viewModel,
-                                    onDismiss = { showCallForwarding = false }
-                                )
-                            }
-                            if (showSmsForwarding) {
-                                ForwardingBottomSheet(
-                                    title = "SMS Forwarding",
-                                    device = device,
-                                    viewModel = viewModel,
-                                    onDismiss = { showSmsForwarding = false }
-                                )
-                            }
-
-                            var showThemeMenu by remember { mutableStateOf(false) }
-                            IconButton(onClick = { showThemeMenu = true }) {
-                                Icon(Icons.Default.Palette, contentDescription = "Theme")
-                            }
-                            DropdownMenu(expanded = showThemeMenu, onDismissRequest = { showThemeMenu = false }) {
-                                listOf("System", "Light", "Dark").forEach { mode ->
-                                    DropdownMenuItem(
-                                        text = { Text(mode) },
-                                        onClick = {
-                                            viewModel.setThemeMode(mode)
-                                            showThemeMenu = false
-                                        }
+                    stickyHeader(key = "main_tab_row") {
+                        Surface(
+                            tonalElevation = 2.dp,
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            ScrollableTabRow(
+                                selectedTabIndex = pagerState.currentPage,
+                                edgePadding = 16.dp,
+                                divider = {},
+                                indicator = { tabPositions ->
+                                    if (pagerState.currentPage < tabPositions.size) {
+                                        TabRowDefaults.SecondaryIndicator(
+                                            Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                                            height = 3.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            ) {
+                                tabs.forEachIndexed { index, tab ->
+                                    Tab(
+                                        selected = pagerState.currentPage == index,
+                                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                                        text = { Text(tab.title) },
+                                        icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.size(20.dp)) }
                                     )
                                 }
                             }
-
-                            var showDeviceActions by remember { mutableStateOf(false) }
-                            IconButton(onClick = { showDeviceActions = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "Device actions")
-                            }
-
-                            if (showDeviceActions) {
-                                DeviceActionsBottomSheet(
-                                    device = device,
-                                    viewModel = viewModel,
-                                    pagerState = pagerState,
-                                    onDismiss = { showDeviceActions = false },
-                                    onBack = onBack
-                                )
-                            }
-                        }
-                    )
-
-                    StickyHeader(device, syncStatus) { viewModel.requestSync() }
-
-                    ScrollableTabRow(
-                        selectedTabIndex = pagerState.currentPage,
-                        edgePadding = 16.dp,
-                        divider = {},
-                        indicator = { tabPositions ->
-                            if (pagerState.currentPage < tabPositions.size) {
-                                TabRowDefaults.SecondaryIndicator(
-                                    Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                                    height = 3.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    ) {
-                        tabs.forEachIndexed { index, tab ->
-                            Tab(
-                                selected = pagerState.currentPage == index,
-                                onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                                text = { Text(tab.title) },
-                                icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.size(20.dp)) }
-                            )
                         }
                     }
 
-                    TextField(
-                        value = searchQuery,
-                        onValueChange = { viewModel.setSearchQuery(it) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
-                        placeholder = { Text("Search data...") },
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                    Icon(
-                                        Icons.Default.Clear,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
+                    if (pagerState.currentPage != 0) {
+                        stickyHeader(key = "main_search_field") {
+                            Surface(
+                                tonalElevation = 1.dp,
+                                color = MaterialTheme.colorScheme.surface,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                TextField(
+                                    value = searchQuery,
+                                    onValueChange = { viewModel.setSearchQuery(it) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    placeholder = { Text("Search data...") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Search,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                                Icon(
+                                                    Icons.Default.Clear,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = TextFieldDefaults.colors(
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                     )
-                                }
+                                )
                             }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
-                    )
+                        }
+                    }
+
+                    when (pagerState.currentPage) {
+                        0 -> {
+                            ProfileTabContent(viewModel, userDetailsState, deviceState, context)
+                        }
+                        1 -> {
+                            ContactsTabContent(viewModel, contactsState, context, scope, snackbarHostState)
+                        }
+                        2 -> {
+                            MessagesTabContent(viewModel, messagesState, smsFilter, context, scope, snackbarHostState)
+                        }
+                        3 -> {
+                            NotificationsTabContent(viewModel, notificationsState, appFilters, selectedApp, context, scope, snackbarHostState)
+                        }
+                        4 -> {
+                            CallsTabContent(viewModel, callsState, callFilter, context, scope, snackbarHostState)
+                        }
+                        5 -> {
+                            MediaTabContent(
+                                viewModel = viewModel,
+                                mediaState = mediaState,
+                                mediaFilter = mediaFilter,
+                                device = deviceState,
+                                context = context,
+                                onPlayVideo = { showVideoPlayer = it },
+                                onShowImage = { showImageViewer = it },
+                                onDeleteRequest = {
+                                    itemToDeleteMedia = it
+                                    showActionSheet = true
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
-    ) { padding ->
-            Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-                PullToRefreshBox(
-                    isRefreshing = isRefreshing,
-                    state = pullToRefreshState,
-                    onRefresh = {
-                        scope.launch {
-                            isRefreshing = true
-                            viewModel.requestSync()
-                            delay(2000)
-                            isRefreshing = false
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.Top
-                    ) { page ->
-                        when (page) {
-                            0 -> ProfileTab(viewModel, listStates[0])
-                            1 -> ContactsTab(viewModel, listStates[1])
-                            2 -> MessagesTab(viewModel, listStates[2])
-                            3 -> NotificationsTab(viewModel, listStates[3])
-                            4 -> CallsTab(viewModel, listStates[4])
-                            5 -> MediaTab(viewModel, listStates[5])
-                        }
+    }
+
+    if (showActionSheet && itemToDeleteMedia != null) {
+        @OptIn(ExperimentalMaterial3Api::class)
+        ModalBottomSheet(onDismissRequest = { showActionSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Media Actions",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(16.dp)
+                )
+
+                ListItem(
+                    headlineContent = { Text("Copy URL") },
+                    leadingContent = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    modifier = Modifier.clickable {
+                        copyToClipboard(context, itemToDeleteMedia!!.secureUrl)
+                        showActionSheet = false
                     }
-                }
+                )
+
+                ListItem(
+                    headlineContent = { Text("Delete Metadata") },
+                    leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    modifier = Modifier.clickable {
+                        viewModel.deleteMedia(itemToDeleteMedia!!.id)
+                        showActionSheet = false
+                    }
+                )
             }
+        }
+    }
+
+    if (showVideoPlayer != null) {
+        VideoPlayerDialog(
+            media = showVideoPlayer!!,
+            onDismiss = { showVideoPlayer = null }
+        )
+    }
+
+    if (showImageViewer != null) {
+        ImageViewerDialog(
+            media = showImageViewer!!,
+            onDismiss = { showImageViewer = null }
+        )
     }
 }
 
@@ -643,70 +996,65 @@ fun CountItem(label: String, count: Int) {
 data class TabItem(val title: String, val icon: ImageVector)
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ContactsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val contactsState by viewModel.contacts.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    var itemToDelete by remember { mutableStateOf<Contact?>(null) }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = contactsState) {
-            is TabUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+fun LazyListScope.ContactsTabContent(
+    viewModel: DeviceDetailViewModel,
+    contactsState: TabUiState<Contact>,
+    context: Context,
+    scope: CoroutineScope,
+    snackbarHostState: SnackbarHostState
+) {
+    when (contactsState) {
+        is TabUiState.Loading -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
-            is TabUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
-                }
-            }
-            is TabUiState.Empty -> {
-                EmptyState("No contacts found")
-            }
-            is TabUiState.Success -> {
-                val contacts = state.data
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TabHeader(
-                        title = "${contacts.size} Contacts",
-                        onCopyAll = {
-                            val text = contacts.joinToString("\n") { "${it.name}: ${it.phone}" }
-                            copyToClipboard(context, text)
-                            scope.launch { snackbarHostState.showSnackbar("All visible contacts copied") }
-                        },
-                        onDeleteAll = { viewModel.deleteAllVisible("contacts", contacts) }
-                    )
-
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(contacts, key = { it.id.ifBlank { hashString("${it.name}${it.phone}") } }) { contact ->
-                            ContactItem(
-                                contact = contact,
-                                viewModel = viewModel,
-                                onDeleteRequest = { itemToDelete = it }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
-                        }
-                    }
+        }
+        is TabUiState.Error -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    Text(contactsState.message, color = MaterialTheme.colorScheme.error)
                 }
             }
         }
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+        is TabUiState.Empty -> {
+            item {
+                EmptyState("No contacts found")
+            }
+        }
+        is TabUiState.Success -> {
+            val contacts = contactsState.data
+            item {
+                TabHeader(
+                    title = "${contacts.size} Contacts",
+                    onCopyAll = {
+                        val text = contacts.joinToString("\n") { "${it.name}: ${it.phone}" }
+                        copyToClipboard(context, text)
+                        scope.launch { snackbarHostState.showSnackbar("All visible contacts copied") }
+                    },
+                    onDeleteAll = { viewModel.deleteAllVisible("contacts", contacts) }
+                )
+            }
+            items(contacts, key = { "contact_${it.id.ifBlank { hashString("${it.name}${it.phone}") }}" }) { contact ->
+                var itemToDelete by remember { mutableStateOf<Contact?>(null) }
+                ContactItem(
+                    contact = contact,
+                    viewModel = viewModel,
+                    onDeleteRequest = { itemToDelete = it }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
 
-        if (itemToDelete != null) {
-            DeleteConfirmationDialog(
-                onConfirm = {
-                    viewModel.deleteItem("contacts", itemToDelete!!.id)
-                    itemToDelete = null
-                },
-                onDismiss = { itemToDelete = null }
-            )
+                if (itemToDelete != null) {
+                    DeleteConfirmationDialog(
+                        onConfirm = {
+                            viewModel.deleteItem("contacts", itemToDelete!!.id)
+                            itemToDelete = null
+                        },
+                        onDismiss = { itemToDelete = null }
+                    )
+                }
+            }
         }
     }
 }
@@ -771,30 +1119,32 @@ fun ContactItem(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val messagesState by viewModel.sms.collectAsStateWithLifecycle()
-    val filter by viewModel.smsFilter.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-
-    var itemToDelete by remember { mutableStateOf<SMS?>(null) }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = messagesState) {
-            is TabUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+fun LazyListScope.MessagesTabContent(
+    viewModel: DeviceDetailViewModel,
+    messagesState: TabUiState<SMS>,
+    filter: Int,
+    context: Context,
+    scope: CoroutineScope,
+    snackbarHostState: SnackbarHostState
+) {
+    when (messagesState) {
+        is TabUiState.Loading -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
-            is TabUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
+        }
+        is TabUiState.Error -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    Text(messagesState.message, color = MaterialTheme.colorScheme.error)
                 }
             }
-            is TabUiState.Empty -> {
-                Column(modifier = Modifier.fillMaxSize()) {
+        }
+        is TabUiState.Empty -> {
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     TabHeader(
                         title = "0 Messages",
                         onCopyAll = { },
@@ -810,53 +1160,46 @@ fun MessagesTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                     EmptyState("No messages found")
                 }
             }
-            is TabUiState.Success -> {
-                val messages = state.data
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TabHeader(
-                        title = "${messages.size} Messages",
-                        onCopyAll = {
-                            val text = messages.joinToString("\n\n") { "[${formatDate(it.date, false)}] ${it.address}: ${it.body}" }
-                            copyToClipboard(context, text)
-                            scope.launch { snackbarHostState.showSnackbar("All visible messages copied") }
-                        },
-                        onDeleteAll = { viewModel.deleteAllVisible("sms", messages) },
-                        extraContent = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(selected = filter == 0, onClick = { viewModel.setSmsFilter(0) }, label = { Text("All") })
-                                FilterChip(selected = filter == 1, onClick = { viewModel.setSmsFilter(1) }, label = { Text("Inbox") })
-                                FilterChip(selected = filter == 2, onClick = { viewModel.setSmsFilter(2) }, label = { Text("Sent") })
-                            }
-                        }
-                    )
-
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(messages, key = { it.id.ifBlank { hashString("${it.address}${it.date}${it.body}") } }) { sms ->
-                            SmsItem(
-                                sms = sms,
-                                viewModel = viewModel,
-                                onDeleteRequest = { itemToDelete = it }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+        }
+        is TabUiState.Success -> {
+            val messages = messagesState.data
+            item {
+                TabHeader(
+                    title = "${messages.size} Messages",
+                    onCopyAll = {
+                        val text = messages.joinToString("\n---\n") { "${it.address} (${formatDate(it.date)}):\n${it.body}" }
+                        copyToClipboard(context, text)
+                        scope.launch { snackbarHostState.showSnackbar("All visible messages copied") }
+                    },
+                    onDeleteAll = { viewModel.deleteAllVisible("sms", messages) },
+                    extraContent = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = filter == 0, onClick = { viewModel.setSmsFilter(0) }, label = { Text("All") })
+                            FilterChip(selected = filter == 1, onClick = { viewModel.setSmsFilter(1) }, label = { Text("Inbox") })
+                            FilterChip(selected = filter == 2, onClick = { viewModel.setSmsFilter(2) }, label = { Text("Sent") })
                         }
                     }
+                )
+            }
+            items(messages, key = { "sms_${it.id.ifBlank { hashString("${it.address}${it.date}${it.body}") }}" }) { sms ->
+                var itemToDelete by remember { mutableStateOf<SMS?>(null) }
+                SmsItem(
+                    sms = sms,
+                    viewModel = viewModel,
+                    onDeleteRequest = { itemToDelete = it }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+
+                if (itemToDelete != null) {
+                    DeleteConfirmationDialog(
+                        onConfirm = {
+                            viewModel.deleteItem("sms", itemToDelete!!.id)
+                            itemToDelete = null
+                        },
+                        onDismiss = { itemToDelete = null }
+                    )
                 }
             }
-        }
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
-
-        if (itemToDelete != null) {
-            DeleteConfirmationDialog(
-                onConfirm = {
-                    viewModel.deleteItem("sms", itemToDelete!!.id)
-                    itemToDelete = null
-                },
-                onDismiss = { itemToDelete = null }
-            )
         }
     }
 }
@@ -933,31 +1276,33 @@ fun SmsItem(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val notificationsState by viewModel.notifications.collectAsStateWithLifecycle()
-    val appFilters by viewModel.appFilters.collectAsStateWithLifecycle()
-    val selectedApp by viewModel.selectedApp.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    var itemToDelete by remember { mutableStateOf<NotificationData?>(null) }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = notificationsState) {
-            is TabUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+fun LazyListScope.NotificationsTabContent(
+    viewModel: DeviceDetailViewModel,
+    notificationsState: TabUiState<NotificationData>,
+    appFilters: Map<String, Int>,
+    selectedApp: String,
+    context: Context,
+    scope: CoroutineScope,
+    snackbarHostState: SnackbarHostState
+) {
+    when (notificationsState) {
+        is TabUiState.Loading -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
-            is TabUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
+        }
+        is TabUiState.Error -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    Text(notificationsState.message, color = MaterialTheme.colorScheme.error)
                 }
             }
-            is TabUiState.Empty -> {
-                Column(modifier = Modifier.fillMaxSize()) {
+        }
+        is TabUiState.Empty -> {
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     TabHeader(
                         title = "0 Notifications",
                         onCopyAll = { },
@@ -972,9 +1317,7 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                                     FilterChip(
                                         selected = selectedApp == app,
                                         onClick = { viewModel.selectApp(app) },
-                                        label = {
-                                            Text("$app (${appFilters[app]})")
-                                        },
+                                        label = { Text("$app (${appFilters[app]})") },
                                         leadingIcon = {
                                             if (app != "All") {
                                                 Icon(
@@ -992,96 +1335,83 @@ fun NotificationsTab(viewModel: DeviceDetailViewModel, listState: LazyListState)
                     EmptyState("No notifications found")
                 }
             }
-            is TabUiState.Success -> {
-                val notifications = state.data
-                val currentSelectedApp = selectedApp
-
-                // Group by app, sender, and conversation to show only the latest message per conversation
-                val groupedNotifications = remember(notifications, currentSelectedApp) {
-                    notifications
-                        .filter { currentSelectedApp == "All" || it.appName == currentSelectedApp }
-                        .groupBy { it.appName }
-                        .mapValues { (_, appNotifications) ->
-                            appNotifications
-                                .groupBy { "${it.packageName}-${it.sender}-${it.conversationId ?: "none"}" }
-                                .mapValues { (_, convNotifications) ->
-                                    convNotifications.maxByOrNull { it.timestamp }
-                                }
-                                .values
-                                .filterNotNull()
-                                .sortedByDescending { it.timestamp }
+        }
+        is TabUiState.Success -> {
+            val notifications = notificationsState.data
+            val groupedNotifications = notifications
+                .filter { selectedApp == "All" || it.appName == selectedApp }
+                .groupBy { it.appName }
+                .mapValues { (_, appNotifications) ->
+                    appNotifications
+                        .groupBy { "${it.packageName}-${it.sender}-${it.conversationId ?: "none"}" }
+                        .mapValues { (_, convNotifications) ->
+                            convNotifications.maxByOrNull { it.timestamp }
                         }
+                        .values
+                        .filterNotNull()
+                        .sortedByDescending { it.timestamp }
                 }
 
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TabHeader(
-                        title = "${notifications.size} Notifications",
-                        onCopyAll = {
-                            val text = notifications.joinToString("\n\n") { "[${formatDate(it.timestamp, false)}] ${it.appName} - ${it.title}: ${it.text}" }
-                            copyToClipboard(context, text)
-                            scope.launch { snackbarHostState.showSnackbar("All visible notifications copied") }
-                        },
-                        onDeleteAll = { viewModel.deleteAllVisible("notifications", notifications) },
-                        extraContent = {
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(appFilters.keys.toList()) { app ->
-                                    FilterChip(
-                                        selected = selectedApp == app,
-                                        onClick = { viewModel.selectApp(app) },
-                                        label = {
-                                            Text("$app (${appFilters[app]})")
-                                        },
-                                        leadingIcon = {
-                                            if (app != "All") {
-                                                Icon(
-                                                    imageVector = getAppIcon(app.lowercase()),
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
+            item {
+                TabHeader(
+                    title = "${notifications.size} Notifications",
+                    onCopyAll = {
+                        val text = notifications.joinToString("\n\n") { "[${formatDate(it.timestamp, false)}] ${it.appName} - ${it.title}: ${it.text}" }
+                        copyToClipboard(context, text)
+                        scope.launch { snackbarHostState.showSnackbar("All visible notifications copied") }
+                    },
+                    onDeleteAll = { viewModel.deleteAllVisible("notifications", notifications) },
+                    extraContent = {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(appFilters.keys.toList()) { app ->
+                                FilterChip(
+                                    selected = selectedApp == app,
+                                    onClick = { viewModel.selectApp(app) },
+                                    label = { Text("$app (${appFilters[app]})") },
+                                    leadingIcon = {
+                                        if (app != "All") {
+                                            Icon(
+                                                imageVector = getAppIcon(app.lowercase()),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
                                         }
-                                    )
-                                }
-                            }
-                        }
-                    )
-
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        groupedNotifications.forEach { (appName, appNotifications) ->
-                            item(key = "header_$appName") {
-                                Text(
-                                    text = appName,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                    }
                                 )
-                            }
-                            items(appNotifications, key = { n -> n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") } }) { notification ->
-                                NotificationItem(notification, viewModel, onDeleteRequest = { itemToDelete = it })
                             }
                         }
                     }
+                )
+            }
+
+            groupedNotifications.forEach { (appName, appNotifications) ->
+                item(key = "header_$appName") {
+                    Text(
+                        text = appName,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+                items(appNotifications, key = { n -> "notif_${n.id.ifBlank { hashString("${n.packageName}${n.timestamp}${n.title}") }}" }) { notification ->
+                    var itemToDelete by remember { mutableStateOf<NotificationData?>(null) }
+                    NotificationItem(notification, viewModel, onDeleteRequest = { itemToDelete = it })
+
+                    if (itemToDelete != null) {
+                        DeleteConfirmationDialog(
+                            onConfirm = {
+                                viewModel.deleteItem("notifications", itemToDelete!!.id)
+                                itemToDelete = null
+                            },
+                            onDismiss = { itemToDelete = null }
+                        )
+                    }
                 }
             }
-        }
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
-
-        if (itemToDelete != null) {
-            DeleteConfirmationDialog(
-                onConfirm = {
-                    viewModel.deleteItem("notifications", itemToDelete!!.id)
-                    itemToDelete = null
-                },
-                onDismiss = { itemToDelete = null }
-            )
         }
     }
 }
@@ -1198,30 +1528,32 @@ fun NotificationItem(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val callsState by viewModel.callLogs.collectAsStateWithLifecycle()
-    val filter by viewModel.callFilter.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    var itemToDelete by remember { mutableStateOf<CallLog?>(null) }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        when (val state = callsState) {
-            is TabUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+fun LazyListScope.CallsTabContent(
+    viewModel: DeviceDetailViewModel,
+    callsState: TabUiState<CallLog>,
+    filter: Int,
+    context: Context,
+    scope: CoroutineScope,
+    snackbarHostState: SnackbarHostState
+) {
+    when (callsState) {
+        is TabUiState.Loading -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
-            is TabUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
+        }
+        is TabUiState.Error -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    Text(callsState.message, color = MaterialTheme.colorScheme.error)
                 }
             }
-            is TabUiState.Empty -> {
-                Column(modifier = Modifier.fillMaxSize()) {
+        }
+        is TabUiState.Empty -> {
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     TabHeader(
                         title = "0 Calls",
                         onCopyAll = { },
@@ -1235,57 +1567,50 @@ fun CallsTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                             }
                         }
                     )
-                    EmptyState("No call logs found")
-                }
-            }
-            is TabUiState.Success -> {
-                val calls = state.data
-                Column(modifier = Modifier.fillMaxSize()) {
-                    TabHeader(
-                        title = "${calls.size} Calls",
-                        onCopyAll = {
-                            val text = calls.joinToString("\n") { "[${formatDate(it.date, false)}] ${it.name} (${it.number}) - ${it.duration}s" }
-                            copyToClipboard(context, text)
-                            scope.launch { snackbarHostState.showSnackbar("All visible calls copied") }
-                        },
-                        onDeleteAll = { viewModel.deleteAllVisible("calllogs", calls) },
-                        extraContent = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(selected = filter == 0, onClick = { viewModel.setCallFilter(0) }, label = { Text("All") })
-                                FilterChip(selected = filter == 1, onClick = { viewModel.setCallFilter(1) }, label = { Text("Incoming") })
-                                FilterChip(selected = filter == 2, onClick = { viewModel.setCallFilter(2) }, label = { Text("Outgoing") })
-                                FilterChip(selected = filter == 3, onClick = { viewModel.setCallFilter(3) }, label = { Text("Missed") })
-                            }
-                        }
-                    )
-
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(calls, key = { it.id.ifBlank { hashString("${it.number}${it.date}${it.type}") } }) { call ->
-                            CallItem(
-                                call = call,
-                                viewModel = viewModel,
-                                onDeleteRequest = { itemToDelete = it }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
-                        }
-                    }
+                    EmptyState("No calls found")
                 }
             }
         }
-        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+        is TabUiState.Success -> {
+            val calls = callsState.data
+            item {
+                TabHeader(
+                    title = "${calls.size} Calls",
+                    onCopyAll = {
+                        val text = calls.joinToString("\n") { "${it.name.ifBlank { "Unknown" }}: ${it.number} (${formatDate(it.date)}) - ${it.type}" }
+                        copyToClipboard(context, text)
+                        scope.launch { snackbarHostState.showSnackbar("All visible calls copied") }
+                    },
+                    onDeleteAll = { viewModel.deleteAllVisible("calllogs", calls) },
+                    extraContent = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = filter == 0, onClick = { viewModel.setCallFilter(0) }, label = { Text("All") })
+                            FilterChip(selected = filter == 1, onClick = { viewModel.setCallFilter(1) }, label = { Text("Incoming") })
+                            FilterChip(selected = filter == 2, onClick = { viewModel.setCallFilter(2) }, label = { Text("Outgoing") })
+                            FilterChip(selected = filter == 3, onClick = { viewModel.setCallFilter(3) }, label = { Text("Missed") })
+                        }
+                    }
+                )
+            }
+            items(calls, key = { "call_${it.id.ifBlank { hashString("${it.number}${it.date}${it.type}") }}" }) { call ->
+                var itemToDelete by remember { mutableStateOf<CallLog?>(null) }
+                CallItem(
+                    call = call,
+                    viewModel = viewModel,
+                    onDeleteRequest = { itemToDelete = it }
+                )
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
 
-        if (itemToDelete != null) {
-            DeleteConfirmationDialog(
-                onConfirm = {
-                    viewModel.deleteItem("calllogs", itemToDelete!!.id)
-                    itemToDelete = null
-                },
-                onDismiss = { itemToDelete = null }
-            )
+                if (itemToDelete != null) {
+                    DeleteConfirmationDialog(
+                        onConfirm = {
+                            viewModel.deleteItem("calllogs", itemToDelete!!.id)
+                            itemToDelete = null
+                        },
+                        onDismiss = { itemToDelete = null }
+                    )
+                }
+            }
         }
     }
 }
@@ -2308,14 +2633,14 @@ fun DeviceActionsBottomSheet(
                 GridActionItem("Call Number", Icons.Default.Call, Color(0xFF4CAF50)) { showCall = true },
                 GridActionItem("Gallery", Icons.Default.PhotoLibrary, Color(0xFFFF9800)) {
                     scope.launch {
-                        pagerState.animateScrollToPage(4)
+                        pagerState.animateScrollToPage(5)
                         viewModel.setMediaFilter("Image")
                         onDismiss()
                     }
                 },
                 GridActionItem("Videos", Icons.Default.VideoLibrary, Color(0xFFE91E63)) {
                     scope.launch {
-                        pagerState.animateScrollToPage(4)
+                        pagerState.animateScrollToPage(5)
                         viewModel.setMediaFilter("Video")
                         onDismiss()
                     }
@@ -2413,35 +2738,34 @@ fun getCallTypeColor(type: Int): Color {
 }
 
 @OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
-    val state by viewModel.media.collectAsStateWithLifecycle()
-    val filter by viewModel.mediaFilter.collectAsStateWithLifecycle()
-    val device by viewModel.device.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-
-    var showActionSheet by remember { mutableStateOf(false) }
-    var itemToDelete by remember { mutableStateOf<MediaData?>(null) }
-    var showPreview by remember { mutableStateOf<MediaData?>(null) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
+fun LazyListScope.MediaTabContent(
+    viewModel: DeviceDetailViewModel,
+    mediaState: TabUiState<MediaData>,
+    mediaFilter: String,
+    device: Device?,
+    context: Context,
+    onPlayVideo: (MediaData) -> Unit,
+    onShowImage: (MediaData) -> Unit,
+    onDeleteRequest: (MediaData) -> Unit
+) {
+    item {
         @OptIn(ExperimentalMaterial3Api::class)
         PrimaryTabRow(
-            selectedTabIndex = when (filter) {
+            selectedTabIndex = when (mediaFilter) {
                 "Image" -> 1
                 "Video" -> 2
                 else -> 0
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            listOf("All", "Gallery", "Videos").forEachIndexed { index, title ->
+            listOf("All", "Gallery", "Videos").forEachIndexed { _, title ->
                 val actualFilter = when(title) {
                     "Gallery" -> "Image"
                     "Videos" -> "Video"
                     else -> "All"
                 }
                 Tab(
-                    selected = filter == actualFilter,
+                    selected = mediaFilter == actualFilter,
                     onClick = { viewModel.setMediaFilter(actualFilter) },
                     text = { Text(title) },
                     icon = {
@@ -2458,8 +2782,9 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 )
             }
         }
+    }
 
-        // Detailed Device Media Status Dashboard Card (Phases 13 & 14)
+    item {
         Card(
             modifier = Modifier.padding(8.dp).fillMaxWidth(),
             shape = RoundedCornerShape(12.dp)
@@ -2493,15 +2818,19 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                 }
             }
         }
+    }
 
-        when (val uiState = state) {
-            is TabUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    when (val uiState = mediaState) {
+        is TabUiState.Loading -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
-            is TabUiState.Empty -> {
-                Column(modifier = Modifier.fillMaxSize()) {
+        }
+        is TabUiState.Empty -> {
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     val emptyMsg = when {
                         device?.autoMediaSyncEnabled == false -> "Auto Media Sync disabled in User app settings."
                         device?.lastMediaErrorStage == "PERMISSION" -> "Media permission missing on Client device."
@@ -2516,139 +2845,45 @@ fun MediaTab(viewModel: DeviceDetailViewModel, listState: LazyListState) {
                     EmptyState(emptyMsg)
                 }
             }
-            is TabUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        }
+        is TabUiState.Error -> {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                     Text(uiState.message, color = MaterialTheme.colorScheme.error)
                 }
             }
-            is TabUiState.Success -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(110.dp),
-                    contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxSize()
+        }
+        is TabUiState.Success -> {
+            val chunkedMedia = uiState.data.chunked(3)
+            items(chunkedMedia.size, key = { index -> "media_row_" + (chunkedMedia[index].firstOrNull()?.id ?: index.toString()) }) { rowIndex ->
+                val rowItems = chunkedMedia[rowIndex]
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(uiState.data.size) { index ->
-                        val media = uiState.data[index]
-                        MediaGridItem(
-                            media = media,
-                            onClick = { showPreview = media },
-                            onLongClick = {
-                                itemToDelete = media
-                                showActionSheet = true
-                            }
-                        )
+                    rowItems.forEach { media ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            MediaGridItem(
+                                media = media,
+                                onClick = {
+                                    if (media.type == "video") {
+                                        onPlayVideo(media)
+                                    } else {
+                                        onShowImage(media)
+                                    }
+                                },
+                                onLongClick = {
+                                    onDeleteRequest(media)
+                                }
+                            )
+                        }
+                    }
+                    val emptyCells = 3 - rowItems.size
+                    repeat(emptyCells) {
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
-        }
-    }
-
-    if (showActionSheet && itemToDelete != null) {
-        @OptIn(ExperimentalMaterial3Api::class)
-        ModalBottomSheet(onDismissRequest = { showActionSheet = false }) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 32.dp)
-            ) {
-                Text(
-                    text = "Media Actions",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp)
-                )
-
-                ListItem(
-                    headlineContent = { Text("Copy URL") },
-                    leadingContent = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        copyToClipboard(context, itemToDelete!!.secureUrl)
-                        showActionSheet = false
-                    }
-                )
-
-                ListItem(
-                    headlineContent = { Text("Delete Metadata") },
-                    leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                    modifier = Modifier.clickable {
-                        viewModel.deleteMedia(itemToDelete!!.id)
-                        showActionSheet = false
-                    }
-                )
-            }
-        }
-    }
-
-    if (showPreview != null) {
-        val uri = android.net.Uri.parse(showPreview!!.secureUrl)
-        val context = LocalContext.current
-
-        if (showPreview!!.type == "video") {
-            LaunchedEffect(showPreview) {
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
-                intent.setDataAndType(uri, "video/*")
-                context.startActivity(intent)
-                showPreview = null
-            }
-        } else {
-            AlertDialog(
-                onDismissRequest = { showPreview = null },
-                title = {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            showPreview!!.fileName,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        IconButton(onClick = { copyToClipboard(context, showPreview!!.secureUrl) }) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy URL")
-                        }
-                    }
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            coil.compose.AsyncImage(
-                                model = showPreview!!.secureUrl,
-                                contentDescription = "Preview",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                            )
-                        }
-
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                MediaDetailRow("Dimensions", "${showPreview!!.width} x ${showPreview!!.height}")
-                                MediaDetailRow("Size", "${showPreview!!.sizeBytes / 1024} KB")
-                                MediaDetailRow("Format", showPreview!!.format.uppercase())
-                                MediaDetailRow("Uploaded", formatDate(showPreview!!.uploadedAt, true))
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = { showPreview = null }) {
-                        Text("Close")
-                    }
-                }
-            )
         }
     }
 }
@@ -2664,22 +2899,36 @@ fun MediaDetailRow(label: String, value: String) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MediaGridItem(media: MediaData, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val modelUrl = if (media.type == "video") {
-        media.thumbnailUrl.ifEmpty { media.secureUrl }
-    } else {
-        media.secureUrl
+    val context = LocalContext.current
+    val isVideo = media.type == "video"
+
+    val thumbnailUrlStr = remember(media) {
+        val storedThumb = media.thumbnailUrl.trim()
+        val generatedThumb = generateCloudinaryVideoThumbnail(media.secureUrl, media.publicId)
+
+        when {
+            storedThumb.startsWith("http") -> storedThumb
+            generatedThumb != null -> generatedThumb
+            media.secureUrl.trim().startsWith("http") -> media.secureUrl.trim()
+            else -> ""
+        }
     }
 
-    val context = LocalContext.current
-    val imageRequest = coil.request.ImageRequest.Builder(context)
-        .data(modelUrl)
-        .apply {
-            if (media.type == "video") {
-                videoFrameMillis(1000)
-                decoderFactory { result, options, _ -> VideoFrameDecoder(result.source, options) }
-            }
+    val imageRequest = remember(thumbnailUrlStr, isVideo) {
+        if (thumbnailUrlStr.trim().isEmpty()) {
+            android.R.drawable.ic_menu_gallery
+        } else {
+            coil.request.ImageRequest.Builder(context)
+                .data(thumbnailUrlStr)
+                .apply {
+                    if (isVideo && !thumbnailUrlStr.contains("/video/upload/")) {
+                        videoFrameMillis(1000)
+                        decoderFactory { result, options, _ -> VideoFrameDecoder(result.source, options) }
+                    }
+                }
+                .build()
         }
-        .build()
+    }
 
     Card(
         shape = RoundedCornerShape(8.dp),
@@ -2697,7 +2946,7 @@ fun MediaGridItem(media: MediaData, onClick: () -> Unit, onLongClick: () -> Unit
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
-            if (media.type == "video") {
+            if (isVideo) {
                 Icon(
                     Icons.Default.PlayCircleOutline,
                     contentDescription = "Video",
