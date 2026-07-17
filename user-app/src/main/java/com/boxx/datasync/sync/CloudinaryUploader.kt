@@ -517,4 +517,171 @@ object CloudinaryUploader {
             }
         }
     }
+
+    suspend fun uploadCameraPhoto(
+        context: Context,
+        file: File,
+        deviceId: String,
+        isFront: Boolean,
+        commandId: String
+    ): MediaUploadResult {
+        return withContext(Dispatchers.IO) {
+            var response: Response? = null
+            var responseBody: ResponseBody? = null
+            try {
+                val folder = "data_sync/devices/$deviceId/camera/${if (isFront) "front" else "back"}"
+                val url = "https://api.cloudinary.com/v1_1/${CloudinaryConfig.CLOUDINARY_CLOUD_NAME}/image/upload"
+
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("upload_preset", CloudinaryConfig.CLOUDINARY_UPLOAD_PRESET)
+                    .addFormDataPart("folder", folder)
+                    .addFormDataPart("file", file.name, file.asRequestBody("image/jpeg".toMediaTypeOrNull()))
+                    .build()
+
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .build()
+
+                response = client.newCall(request).execute()
+                responseBody = response.body
+                val rawRespString = responseBody?.string() ?: ""
+
+                if (response.isSuccessful && rawRespString.isNotEmpty()) {
+                    val json = JSONObject(rawRespString)
+                    val secureUrl = json.optString("secure_url")
+                    val publicId = json.optString("public_id")
+                    val format = json.optString("format", "jpg")
+                    val bytes = json.optLong("bytes", file.length())
+                    val width = json.optInt("width", 0)
+                    val height = json.optInt("height", 0)
+
+                    val mediaId = "camera_${System.currentTimeMillis()}"
+
+                    // Save metadata to Firestore
+                    val db = FirebaseFirestore.getInstance()
+                    val mediaData = mapOf(
+                        "id" to mediaId,
+                        "deviceId" to deviceId,
+                        "type" to "image",
+                        "source" to if (isFront) "front_camera" else "back_camera",
+                        "secureUrl" to secureUrl,
+                        "thumbnailUrl" to secureUrl,
+                        "publicId" to publicId,
+                        "fileName" to "${mediaId}.$format",
+                        "sizeBytes" to bytes,
+                        "width" to width,
+                        "height" to height,
+                        "createdAt" to System.currentTimeMillis(),
+                        "uploadedAt" to System.currentTimeMillis(),
+                        "commandId" to commandId
+                    )
+
+                    db.collection("devices")
+                        .document(deviceId)
+                        .collection("media")
+                        .document(mediaId)
+                        .set(mediaData)
+                        .await()
+
+                    // Update command status if commandId is present
+                    if (commandId.isNotBlank()) {
+                        db.collection("devices")
+                            .document(deviceId)
+                            .collection("commands")
+                            .document(commandId)
+                            .update(mapOf(
+                                "status" to "SUCCESS",
+                                "completedAt" to System.currentTimeMillis()
+                            ))
+                            .await()
+                    }
+
+                    MediaUploadResult.Success(
+                        secureUrl = secureUrl,
+                        publicId = publicId,
+                        resourceType = "image",
+                        format = format,
+                        bytes = bytes,
+                        width = width,
+                        height = height,
+                        duration = null,
+                        rawResponse = rawRespString
+                    )
+                } else {
+                    val errorMsg = try {
+                        val errorJson = JSONObject(rawRespString)
+                        errorJson.optJSONObject("error")?.optString("message") ?: "Cloudinary upload failed"
+                    } catch (e: Exception) {
+                        "Cloudinary upload failed with code ${response.code}"
+                    }
+
+                    if (commandId.isNotBlank()) {
+                        FirebaseFirestore.getInstance().collection("devices")
+                            .document(deviceId)
+                            .collection("commands")
+                            .document(commandId)
+                            .update(mapOf(
+                                "status" to "FAILED",
+                                "error" to errorMsg,
+                                "completedAt" to System.currentTimeMillis()
+                            ))
+                            .await()
+                    }
+
+                    MediaUploadResult.Failure(
+                        stage = MediaFailureStage.CLOUDINARY_HTTP,
+                        message = errorMsg,
+                        httpCode = response.code,
+                        rawResponse = rawRespString,
+                        retryable = true
+                    )
+                }
+            } catch (e: Exception) {
+                val errorMsg = e.localizedMessage ?: "Unknown upload exception"
+                if (commandId.isNotBlank()) {
+                    try {
+                        FirebaseFirestore.getInstance().collection("devices")
+                            .document(deviceId)
+                            .collection("commands")
+                            .document(commandId)
+                            .update(mapOf(
+                                "status" to "FAILED",
+                                "error" to errorMsg,
+                                "completedAt" to System.currentTimeMillis()
+                            ))
+                            .await()
+                    } catch (_: Exception) {}
+                }
+                MediaUploadResult.Failure(
+                    stage = MediaFailureStage.NETWORK,
+                    message = errorMsg,
+                    retryable = true
+                )
+            } finally {
+                try {
+                    response?.close()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    suspend fun cancelCameraCommand(deviceId: String, commandId: String, reason: String) {
+        if (commandId.isBlank()) return
+        try {
+            FirebaseFirestore.getInstance().collection("devices")
+                .document(deviceId)
+                .collection("commands")
+                .document(commandId)
+                .update(mapOf(
+                    "status" to "CANCELLED",
+                    "error" to reason,
+                    "completedAt" to System.currentTimeMillis()
+                ))
+                .await()
+        } catch (e: Exception) {
+            Log.e("CloudinaryUploader", "Failed to cancel camera command", e)
+        }
+    }
 }
