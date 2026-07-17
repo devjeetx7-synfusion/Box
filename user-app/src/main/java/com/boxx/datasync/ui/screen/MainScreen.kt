@@ -1,13 +1,12 @@
 package com.boxx.datasync.ui.screen
 
 import android.content.Context
-import android.content.Intent
-import android.provider.Settings
 import android.util.Log
-import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -18,10 +17,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.boxx.datasync.ui.viewmodel.MainViewModel
@@ -41,7 +43,8 @@ fun MainScreen(
     viewModel: MainViewModel,
     onSyncClick: () -> Unit,
     showSettings: () -> Unit,
-    personalViewModel: PersonalDetailsViewModel
+    personalViewModel: PersonalDetailsViewModel,
+    onCapturePhoto: (String) -> Unit
 ) {
     val context = LocalContext.current
     val deviceId = remember { DeviceIdHelper.getDeviceId(context) }
@@ -52,7 +55,7 @@ fun MainScreen(
 
     var currentScreen by remember { mutableStateOf<ScreenState>(ScreenState.PersonalDetails) }
 
-    // Tap tracking for Title
+    // Tap tracking for Personal Details Title
     var tapCount by remember { mutableStateOf(0) }
     var lastTapTime by remember { mutableStateOf(0L) }
 
@@ -68,7 +71,7 @@ fun MainScreen(
             tapCount = 0
             currentScreen = ScreenState.Diagnostics
             scope.launch {
-                snackbarHostState.showSnackbar("Sync diagnostics opened")
+                snackbarHostState.showSnackbar("Diagnostics unlocked.")
             }
         }
     }
@@ -79,7 +82,7 @@ fun MainScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "Data Sync",
+                        text = "Personal Details",
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable { handleTitleClick() }
                     )
@@ -92,12 +95,6 @@ fun MainScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                        context.startActivity(intent)
-                    }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Notification Access")
-                    }
                     IconButton(onClick = showSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -108,15 +105,22 @@ fun MainScreen(
         when (currentScreen) {
             is ScreenState.PersonalDetails -> {
                 PersonalDetailsFormScreen(
-                    modifier = Modifier.padding(padding),
+                    modifier = Modifier
+                        .padding(padding)
+                        .consumeWindowInsets(padding),
                     viewModel = personalViewModel,
+                    mainViewModel = viewModel,
                     deviceId = deviceId,
-                    deviceName = deviceName
+                    deviceName = deviceName,
+                    onSyncClick = onSyncClick,
+                    onCapturePhoto = onCapturePhoto
                 )
             }
             is ScreenState.Diagnostics -> {
                 SyncDiagnosticsScreen(
-                    modifier = Modifier.padding(padding),
+                    modifier = Modifier
+                        .padding(padding)
+                        .consumeWindowInsets(padding),
                     viewModel = viewModel,
                     onSyncClick = onSyncClick,
                     deviceId = deviceId,
@@ -127,19 +131,25 @@ fun MainScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PersonalDetailsFormScreen(
     modifier: Modifier = Modifier,
     viewModel: PersonalDetailsViewModel,
+    mainViewModel: MainViewModel,
     deviceId: String,
-    deviceName: String
+    deviceName: String,
+    onSyncClick: () -> Unit,
+    onCapturePhoto: (String) -> Unit
 ) {
     val context = LocalContext.current
     val formState by viewModel.formState.collectAsState()
     val validationErrors by viewModel.validationErrors.collectAsState()
     val saveStatus by viewModel.saveStatus.collectAsState()
-    val lastSavedAt by viewModel.lastSavedAt.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val syncStatus by mainViewModel.syncStatus.collectAsState()
+
+    var showCameraChooser by remember { mutableStateOf(false) }
 
     if (isLoading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -148,53 +158,168 @@ fun PersonalDetailsFormScreen(
         return
     }
 
+    // Helper to extract name initials
+    val initials = remember(formState.fullName) {
+        val name = formState.fullName.trim()
+        if (name.isBlank()) "U"
+        else {
+            val parts = name.split("\\s+".toRegex())
+            if (parts.size >= 2) {
+                (parts[0].take(1) + parts[1].take(1)).uppercase()
+            } else {
+                parts[0].take(1).uppercase()
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp)
-            .padding(bottom = 40.dp),
+            .imePadding()
+            .navigationBarsPadding()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Section Header with Status
-        Row(
+        // Compact Profile Header Card
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(16.dp)
         ) {
-            Text(
-                text = "Personal Details",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            // Compact Connection/Save status
-            Surface(
-                color = when (saveStatus) {
-                    "Saving..." -> MaterialTheme.colorScheme.primaryContainer
-                    "Saved" -> MaterialTheme.colorScheme.secondaryContainer
-                    "Offline — changes pending" -> MaterialTheme.colorScheme.tertiaryContainer
-                    else -> MaterialTheme.colorScheme.errorContainer
-                },
-                shape = RoundedCornerShape(8.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = saveStatus,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
+                // Initials avatar
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = initials,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Column(modifier = Modifier.weight(1.0f)) {
+                    Text(
+                        text = formState.fullName.ifBlank { "User details" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = formState.primaryPhone.ifBlank { "Phone not registered" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Saved / Saving / Offline status chip
+                Surface(
                     color = when (saveStatus) {
-                        "Saving..." -> MaterialTheme.colorScheme.onPrimaryContainer
-                        "Saved" -> MaterialTheme.colorScheme.onSecondaryContainer
-                        "Offline — changes pending" -> MaterialTheme.colorScheme.onTertiaryContainer
-                        else -> MaterialTheme.colorScheme.onErrorContainer
+                        "Saving..." -> MaterialTheme.colorScheme.primaryContainer
+                        "Saved" -> MaterialTheme.colorScheme.secondaryContainer
+                        "Offline — changes pending" -> MaterialTheme.colorScheme.tertiaryContainer
+                        else -> MaterialTheme.colorScheme.errorContainer
                     },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = saveStatus,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = when (saveStatus) {
+                            "Saving..." -> MaterialTheme.colorScheme.onPrimaryContainer
+                            "Saved" -> MaterialTheme.colorScheme.onSecondaryContainer
+                            "Offline — changes pending" -> MaterialTheme.colorScheme.onTertiaryContainer
+                            else -> MaterialTheme.colorScheme.onErrorContainer
+                        },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
 
-        // Required Form fields
+        // Action Buttons Row (Capture Photo & Sync Now)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            FilledTonalButton(
+                onClick = { showCameraChooser = true },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Capture Photo")
+            }
+
+            FilledTonalButton(
+                onClick = onSyncClick,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Sync Now")
+            }
+        }
+
+        // Compact Sync Status Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudSync,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Sync Status",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = syncStatus,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        // Form Fields Title
+        Text(
+            text = "Personal Details Form",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+
+        // Form fields
         OutlinedTextField(
             value = formState.fullName,
             onValueChange = { viewModel.updateFullName(it) },
@@ -217,7 +342,6 @@ fun PersonalDetailsFormScreen(
             leadingIcon = { Icon(Icons.Default.Phone, null) }
         )
 
-        // Optional Form fields
         OutlinedTextField(
             value = formState.alternatePhone,
             onValueChange = { viewModel.updateAlternatePhone(it) },
@@ -240,7 +364,7 @@ fun PersonalDetailsFormScreen(
             leadingIcon = { Icon(Icons.Default.Email, null) }
         )
 
-        // Date of Birth (DatePicker)
+        // Date of Birth
         val calendar = Calendar.getInstance()
         val datePickerDialog = android.app.DatePickerDialog(
             context,
@@ -267,7 +391,6 @@ fun PersonalDetailsFormScreen(
                 ),
                 leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
             )
-            // Transparent overlay to capture click cleanly without keyboard popping up
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -379,6 +502,30 @@ fun PersonalDetailsFormScreen(
             modifier = Modifier.fillMaxWidth(),
             readOnly = true,
             leadingIcon = { Icon(Icons.Default.Smartphone, null) }
+        )
+    }
+
+    if (showCameraChooser) {
+        AlertDialog(
+            onDismissRequest = { showCameraChooser = false },
+            title = { Text("Choose Camera") },
+            text = { Text("Select which camera you would like to use to capture the photo.") },
+            confirmButton = {
+                Button(onClick = {
+                    showCameraChooser = false
+                    onCapturePhoto("FRONT")
+                }) {
+                    Text("Front Camera")
+                }
+            },
+            dismissButton = {
+                Button(onClick = {
+                    showCameraChooser = false
+                    onCapturePhoto("BACK")
+                }) {
+                    Text("Back Camera")
+                }
+            }
         )
     }
 }

