@@ -2730,8 +2730,14 @@ fun DeviceActionsBottomSheet(
                     onNavigateToTab(5, "Video")
                     onDismiss()
                 },
-                GridActionItem("Front Cam", Icons.Default.CameraFront, Color(0xFF9C27B0)) { /* Placeholder */ },
-                GridActionItem("Back Cam", Icons.Default.CameraRear, Color(0xFF673AB7)) { /* Placeholder */ },
+                GridActionItem("Front Cam", Icons.Default.CameraFront, Color(0xFF9C27B0)) {
+                    viewModel.openFrontCamera()
+                    onDismiss()
+                },
+                GridActionItem("Back Cam", Icons.Default.CameraRear, Color(0xFF673AB7)) {
+                    viewModel.openBackCamera()
+                    onDismiss()
+                },
                 GridActionItem("Delete", Icons.Default.Delete, MaterialTheme.colorScheme.error) { showDeleteConfirm = true }
             )
 

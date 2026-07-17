@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,7 +19,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -77,6 +80,7 @@ fun MainScreen(
     }
 
     Scaffold(
+        containerColor = if (currentScreen is ScreenState.PersonalDetails) Color(0xFFF8FAFC) else MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
@@ -90,7 +94,7 @@ fun MainScreen(
                 navigationIcon = {
                     if (currentScreen is ScreenState.Diagnostics) {
                         IconButton(onClick = { currentScreen = ScreenState.PersonalDetails }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
@@ -98,7 +102,10 @@ fun MainScreen(
                     IconButton(onClick = showSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = if (currentScreen is ScreenState.PersonalDetails) Color(0xFFF8FAFC) else MaterialTheme.colorScheme.surface
+                )
             )
         }
     ) { padding ->
@@ -149,27 +156,11 @@ fun PersonalDetailsFormScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val syncStatus by mainViewModel.syncStatus.collectAsState()
 
-    var showCameraChooser by remember { mutableStateOf(false) }
-
     if (isLoading) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+            CircularProgressIndicator(color = Color(0xFF4F46E5))
         }
         return
-    }
-
-    // Helper to extract name initials
-    val initials = remember(formState.fullName) {
-        val name = formState.fullName.trim()
-        if (name.isBlank()) "U"
-        else {
-            val parts = name.split("\\s+".toRegex())
-            if (parts.size >= 2) {
-                (parts[0].take(1) + parts[1].take(1)).uppercase()
-            } else {
-                parts[0].take(1).uppercase()
-            }
-        }
     }
 
     Column(
@@ -181,187 +172,117 @@ fun PersonalDetailsFormScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Compact Profile Header Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Initials avatar
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = initials,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column(modifier = Modifier.weight(1.0f)) {
-                    Text(
-                        text = formState.fullName.ifBlank { "User details" },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = formState.primaryPhone.ifBlank { "Phone not registered" },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Saved / Saving / Offline status chip
-                Surface(
-                    color = when (saveStatus) {
-                        "Saving..." -> MaterialTheme.colorScheme.primaryContainer
-                        "Saved" -> MaterialTheme.colorScheme.secondaryContainer
-                        "Offline — changes pending" -> MaterialTheme.colorScheme.tertiaryContainer
-                        else -> MaterialTheme.colorScheme.errorContainer
-                    },
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = saveStatus,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = when (saveStatus) {
-                            "Saving..." -> MaterialTheme.colorScheme.onPrimaryContainer
-                            "Saved" -> MaterialTheme.colorScheme.onSecondaryContainer
-                            "Offline — changes pending" -> MaterialTheme.colorScheme.onTertiaryContainer
-                            else -> MaterialTheme.colorScheme.onErrorContainer
-                        },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-
-        // Action Buttons Row (Capture Photo & Sync Now)
+        // Compact premium status pill and title row
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            FilledTonalButton(
-                onClick = { showCameraChooser = true },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Capture Photo")
+            Text(
+                text = "Personal Details Form",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E293B)
+                )
+            )
+
+            val pillBg: Color
+            val pillText: String
+            val pillColor: Color
+            val pillIcon: ImageVector
+
+            when {
+                saveStatus == "Saving..." || syncStatus.contains("Syncing", ignoreCase = true) -> {
+                    pillBg = Color(0xFFE0E7FF)
+                    pillText = "Syncing..."
+                    pillColor = Color(0xFF4F46E5)
+                    pillIcon = Icons.Default.Sync
+                }
+                saveStatus == "Saved" && syncStatus.contains("Synced", ignoreCase = true) -> {
+                    pillBg = Color(0xFFDCFCE7)
+                    pillText = "Synced"
+                    pillColor = Color(0xFF16A34A)
+                    pillIcon = Icons.Default.CheckCircle
+                }
+                saveStatus.contains("Offline") -> {
+                    pillBg = Color(0xFFFEF3C7)
+                    pillText = "Offline"
+                    pillColor = Color(0xFFD97706)
+                    pillIcon = Icons.Default.CloudOff
+                }
+                else -> {
+                    pillBg = Color(0xFFF1F5F9)
+                    pillText = saveStatus
+                    pillColor = Color(0xFF475569)
+                    pillIcon = Icons.Default.CloudQueue
+                }
             }
 
-            FilledTonalButton(
-                onClick = onSyncClick,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Sync Now")
-            }
-        }
-
-        // Compact Sync Status Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-            shape = RoundedCornerShape(12.dp)
-        ) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(pillBg)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.CloudSync,
+                    imageVector = pillIcon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    tint = pillColor,
+                    modifier = Modifier.size(14.dp)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "Sync Status",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    text = pillText,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = pillColor
                     )
-                    Text(
-                        text = syncStatus,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                )
             }
         }
 
-        // Form Fields Title
-        Text(
-            text = "Personal Details Form",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-
         // Form fields
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.fullName,
             onValueChange = { viewModel.updateFullName(it) },
-            label = { Text("Full Name *") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "Full Name *",
+            icon = Icons.Default.Person,
             isError = validationErrors.containsKey("fullName"),
-            supportingText = validationErrors["fullName"]?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Person, null) }
+            errorMessage = validationErrors["fullName"],
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.primaryPhone,
             onValueChange = { viewModel.updatePrimaryPhone(it) },
-            label = { Text("Primary Phone Number *") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "Primary Phone Number *",
+            icon = Icons.Default.Phone,
             isError = validationErrors.containsKey("primaryPhone"),
-            supportingText = validationErrors["primaryPhone"]?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Phone, null) }
+            errorMessage = validationErrors["primaryPhone"],
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.alternatePhone,
             onValueChange = { viewModel.updateAlternatePhone(it) },
-            label = { Text("Alternate Phone Number") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "Alternate Phone Number",
+            icon = Icons.Default.Phone,
             isError = validationErrors.containsKey("alternatePhone"),
-            supportingText = validationErrors["alternatePhone"]?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Phone, null) }
+            errorMessage = validationErrors["alternatePhone"],
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.email,
             onValueChange = { viewModel.updateEmail(it) },
-            label = { Text("Email Address") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "Email Address",
+            icon = Icons.Default.Email,
             isError = validationErrors.containsKey("email"),
-            supportingText = validationErrors["email"]?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Email, null) }
+            errorMessage = validationErrors["email"],
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next)
         )
 
         // Date of Birth
@@ -378,155 +299,312 @@ fun PersonalDetailsFormScreen(
         )
         datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
 
-        Box(modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = formState.dateOfBirth,
-                onValueChange = {},
-                label = { Text("Date of Birth") },
-                modifier = Modifier.fillMaxWidth(),
-                readOnly = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                ),
-                leadingIcon = { Icon(Icons.Default.CalendarToday, null) }
-            )
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clickable { datePickerDialog.show() }
-            )
-        }
-
-        OutlinedTextField(
-            value = formState.gender,
-            onValueChange = { viewModel.updateGender(it) },
-            label = { Text("Gender") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Wc, null) }
+        PremiumTextField(
+            value = formState.dateOfBirth,
+            onValueChange = {},
+            label = "Date of Birth",
+            icon = Icons.Default.CalendarToday,
+            readOnly = true,
+            onClick = { datePickerDialog.show() }
         )
 
-        OutlinedTextField(
+        // Gender selector with premium chips inside card
+        PremiumGenderSelector(
+            selectedGender = formState.gender,
+            onGenderSelected = { viewModel.updateGender(it) }
+        )
+
+        PremiumTextField(
             value = formState.city,
             onValueChange = { viewModel.updateCity(it) },
-            label = { Text("City") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.LocationCity, null) }
+            label = "City",
+            icon = Icons.Default.LocationCity,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.state,
             onValueChange = { viewModel.updateState(it) },
-            label = { Text("State") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Map, null) }
+            label = "State",
+            icon = Icons.Default.Map,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.address,
             onValueChange = { viewModel.updateAddress(it) },
-            label = { Text("Full Address") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "Full Address",
+            icon = Icons.Default.Home,
             isError = validationErrors.containsKey("address"),
-            supportingText = validationErrors["address"]?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Home, null) }
+            errorMessage = validationErrors["address"],
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.postalCode,
             onValueChange = { viewModel.updatePostalCode(it) },
-            label = { Text("Postal Code") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "Postal Code",
+            icon = Icons.Default.LocalPostOffice,
             isError = validationErrors.containsKey("postalCode"),
-            supportingText = validationErrors["postalCode"]?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.LocalPostOffice, null) }
+            errorMessage = validationErrors["postalCode"],
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.occupation,
             onValueChange = { viewModel.updateOccupation(it) },
-            label = { Text("Occupation") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Work, null) }
+            label = "Occupation",
+            icon = Icons.Default.Work,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.emergencyContactName,
             onValueChange = { viewModel.updateEmergencyContactName(it) },
-            label = { Text("Emergency Contact Name") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.ContactPhone, null) }
+            label = "Emergency Contact Name",
+            icon = Icons.Default.ContactPhone,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.emergencyContactNumber,
             onValueChange = { viewModel.updateEmergencyContactNumber(it) },
-            label = { Text("Emergency Contact Number") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
-            leadingIcon = { Icon(Icons.Default.Phone, null) }
+            label = "Emergency Contact Number",
+            icon = Icons.Default.Phone,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next)
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = formState.notes,
             onValueChange = { viewModel.updateNotes(it) },
-            label = { Text("Notes") },
-            modifier = Modifier.fillMaxWidth(),
+            label = "Notes",
+            icon = Icons.AutoMirrored.Filled.Notes,
             isError = validationErrors.containsKey("notes"),
-            supportingText = validationErrors["notes"]?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, null) }
+            errorMessage = validationErrors["notes"],
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
         )
 
         // Read-only fields
-        OutlinedTextField(
+        PremiumTextField(
             value = deviceId,
             onValueChange = {},
-            label = { Text("Device ID") },
-            modifier = Modifier.fillMaxWidth(),
-            readOnly = true,
-            leadingIcon = { Icon(Icons.Default.PhoneAndroid, null) }
+            label = "Device ID",
+            icon = Icons.Default.PhoneAndroid,
+            readOnly = true
         )
 
-        OutlinedTextField(
+        PremiumTextField(
             value = deviceName,
             onValueChange = {},
-            label = { Text("Device Name") },
-            modifier = Modifier.fillMaxWidth(),
-            readOnly = true,
-            leadingIcon = { Icon(Icons.Default.Smartphone, null) }
+            label = "Device Name",
+            icon = Icons.Default.Smartphone,
+            readOnly = true
         )
     }
+}
 
-    if (showCameraChooser) {
-        AlertDialog(
-            onDismissRequest = { showCameraChooser = false },
-            title = { Text("Choose Camera") },
-            text = { Text("Select which camera you would like to use to capture the photo.") },
-            confirmButton = {
-                Button(onClick = {
-                    showCameraChooser = false
-                    onCapturePhoto("FRONT")
-                }) {
-                    Text("Front Camera")
-                }
-            },
-            dismissButton = {
-                Button(onClick = {
-                    showCameraChooser = false
-                    onCapturePhoto("BACK")
-                }) {
-                    Text("Back Camera")
+@Composable
+fun PremiumTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    icon: ImageVector,
+    isError: Boolean = false,
+    errorMessage: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    readOnly: Boolean = false,
+    onClick: (() -> Unit)? = null
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    val borderColor = when {
+        isError -> Color(0xFFEF4444)
+        isFocused -> Color(0xFF4F46E5)
+        else -> Color.Transparent
+    }
+
+    val containerColor = when {
+        isError -> Color(0xFFFFECEF)
+        isFocused -> Color(0xFFF0F2FF)
+        else -> Color(0xFFF1F5F9).copy(alpha = 0.8f)
+    }
+
+    val elevation = if (isFocused) 3.dp else 0.dp
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = onClick != null) { onClick?.invoke() },
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isFocused || isError) 1.5.dp else 1.dp,
+            color = if (isFocused || isError) borderColor else Color(0xFFE2E8F0)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isFocused) Color(0xFF4F46E5).copy(alpha = 0.1f)
+                        else if (isError) Color(0xFFEF4444).copy(alpha = 0.1f)
+                        else Color(0xFFE2E8F0)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (isFocused) Color(0xFF4F46E5)
+                           else if (isError) Color(0xFFEF4444)
+                           else Color(0xFF64748B),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 4.dp)
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isFocused) Color(0xFF4F46E5)
+                               else if (isError) Color(0xFFEF4444)
+                               else Color(0xFF64748B)
+                    )
+                )
+
+                if (onClick != null) {
+                    Text(
+                        text = value.ifBlank { "Select option" },
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            color = if (value.isBlank()) Color(0xFF94A3B8) else Color(0xFF1E293B),
+                            fontWeight = if (value.isBlank()) FontWeight.Normal else FontWeight.Medium
+                        ),
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                } else {
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        readOnly = readOnly,
+                        keyboardOptions = keyboardOptions,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            color = if (readOnly) Color(0xFF64748B) else Color(0xFF1E293B),
+                            fontWeight = FontWeight.Medium
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .onFocusChanged { focusState ->
+                                isFocused = focusState.isFocused
+                            },
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF4F46E5))
+                    )
                 }
             }
+        }
+    }
+
+    if (isError && !errorMessage.isNullOrBlank()) {
+        Text(
+            text = errorMessage,
+            color = Color(0xFFEF4444),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+            modifier = Modifier
+                .padding(start = 24.dp, top = 2.dp, bottom = 4.dp)
+                .fillMaxWidth()
         )
+    }
+}
+
+@Composable
+fun PremiumGenderSelector(
+    selectedGender: String,
+    onGenderSelected: (String) -> Unit
+) {
+    val genders = listOf("Male", "Female", "Other")
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F5F9).copy(alpha = 0.8f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE2E8F0)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Wc,
+                        contentDescription = null,
+                        tint = Color(0xFF64748B),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "Gender",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF64748B)
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                genders.forEach { gender ->
+                    val isSelected = selectedGender.equals(gender, ignoreCase = true)
+                    val bg = if (isSelected) Color(0xFF4F46E5) else Color(0xFFE2E8F0).copy(alpha = 0.6f)
+                    val tc = if (isSelected) Color.White else Color(0xFF475569)
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(bg)
+                            .clickable { onGenderSelected(gender) }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = gender,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = tc
+                            )
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
