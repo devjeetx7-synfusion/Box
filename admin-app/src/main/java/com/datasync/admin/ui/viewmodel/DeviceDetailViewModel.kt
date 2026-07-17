@@ -266,6 +266,14 @@ class DeviceDetailViewModel @Inject constructor(
                             _commandStatus.value = CommandStatus.Unsupported(command.error)
                             return@collect
                         }
+                        "AWAITING_CARRIER_CONFIRMATION" -> {
+                            _commandStatus.value = CommandStatus.AwaitingCarrierConfirmation
+                            return@collect
+                        }
+                        "DIALER_OPENED" -> {
+                            _commandStatus.value = CommandStatus.DialerOpened
+                            return@collect
+                        }
                     }
                 }
                 if (System.currentTimeMillis() - startTime > 60000) {
@@ -448,4 +456,6 @@ sealed class CommandStatus {
     object Success : CommandStatus()
     data class Failed(val error: String) : CommandStatus()
     data class Unsupported(val error: String? = null) : CommandStatus()
+    object AwaitingCarrierConfirmation : CommandStatus()
+    object DialerOpened : CommandStatus()
 }
