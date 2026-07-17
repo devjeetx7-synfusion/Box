@@ -45,6 +45,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.positionChange
+import android.util.Log
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -520,7 +525,7 @@ fun ProfileFieldRow(label: String, value: String) {
 @Composable
 fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetailViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 6 })
+    var selectedTabIndex by rememberSaveable { mutableIntStateOf(0) }
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
 
@@ -547,20 +552,38 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
 
     // Independent scroll position tracking!
     val tabScrollPositions = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
-    val currentTab = pagerState.currentPage
-    val previousTab = remember { mutableStateOf(currentTab) }
 
-    LaunchedEffect(currentTab) {
-        val prev = previousTab.value
-        if (prev != currentTab) {
-            tabScrollPositions[prev] = Pair(mainListState.firstVisibleItemIndex, mainListState.firstVisibleItemScrollOffset)
-            val savedPos = tabScrollPositions[currentTab]
-            if (savedPos != null) {
+    val changeTab = { targetIndex: Int ->
+        if (targetIndex in 0..5 && targetIndex != selectedTabIndex) {
+            android.util.Log.d("AdminUI", "TAB_CLICKED: target=$targetIndex")
+            // Save current position
+            tabScrollPositions[selectedTabIndex] = Pair(
+                mainListState.firstVisibleItemIndex,
+                mainListState.firstVisibleItemScrollOffset
+            )
+            android.util.Log.d("AdminUI", "TAB_SCROLL_POSITION_SAVED: tab=$selectedTabIndex index=${mainListState.firstVisibleItemIndex} offset=${mainListState.firstVisibleItemScrollOffset}")
+
+            // Prevent search state incorrectly affecting another tab
+            viewModel.setSearchQuery("")
+
+            // Update selected index
+            val oldTab = selectedTabIndex
+            selectedTabIndex = targetIndex
+            android.util.Log.d("AdminUI", "TAB_INDEX_CHANGED: old=$oldTab new=$targetIndex")
+        }
+    }
+
+    LaunchedEffect(selectedTabIndex) {
+        val savedPos = tabScrollPositions[selectedTabIndex]
+        if (savedPos != null) {
+            try {
                 mainListState.scrollToItem(savedPos.first, savedPos.second)
-            } else {
+                android.util.Log.d("AdminUI", "TAB_SCROLL_POSITION_RESTORED: tab=$selectedTabIndex index=${savedPos.first} offset=${savedPos.second}")
+            } catch (e: Exception) {
                 mainListState.scrollToItem(0, 0)
             }
-            previousTab.value = currentTab
+        } else {
+            mainListState.scrollToItem(0, 0)
         }
     }
 
@@ -668,7 +691,12 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                             DeviceActionsBottomSheet(
                                 device = device,
                                 viewModel = viewModel,
-                                pagerState = pagerState,
+                                onNavigateToTab = { index, mediaFilterValue ->
+                                    if (mediaFilterValue != null) {
+                                        viewModel.setMediaFilter(mediaFilterValue)
+                                    }
+                                    changeTab(index)
+                                },
                                 onDismiss = { showDeviceActions = false },
                                 onBack = onBack
                             )
@@ -715,122 +743,184 @@ fun DeviceDetailContent(deviceId: String, device: Device, viewModel: DeviceDetai
                 },
                 modifier = Modifier.fillMaxSize()
             ) {
-                LazyColumn(
-                    state = mainListState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 16.dp)
-                ) {
-                    item(key = "main_sticky_header") {
-                        StickyHeader(device, syncStatus) { viewModel.requestSync() }
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(selectedTabIndex) {
+                            val touchSlop = viewConfiguration.touchSlop
+                            awaitPointerEventScope {
+                                while (true) {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    var dragConsumed = false
+                                    var accumulatedDx = 0f
+                                    var accumulatedDy = 0f
+                                    var isHorizontalSwipe = false
+                                    var hasSwitched = false
 
-                    stickyHeader(key = "main_tab_row") {
-                        Surface(
-                            tonalElevation = 2.dp,
-                            color = MaterialTheme.colorScheme.surface,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            ScrollableTabRow(
-                                selectedTabIndex = pagerState.currentPage,
-                                edgePadding = 16.dp,
-                                divider = {},
-                                indicator = { tabPositions ->
-                                    if (pagerState.currentPage < tabPositions.size) {
-                                        TabRowDefaults.SecondaryIndicator(
-                                            Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                                            height = 3.dp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            ) {
-                                tabs.forEachIndexed { index, tab ->
-                                    Tab(
-                                        selected = pagerState.currentPage == index,
-                                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                                        text = { Text(tab.title) },
-                                        icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.size(20.dp)) }
-                                    )
+                                    android.util.Log.d("AdminUI", "TAB_SWIPE_STARTED")
+
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull() ?: break
+                                        if (change.pressed && !change.isConsumed) {
+                                            val positionChange = change.positionChange()
+                                            accumulatedDx += positionChange.x
+                                            accumulatedDy += positionChange.y
+
+                                            if (!isHorizontalSwipe && !dragConsumed) {
+                                                val absDx = kotlin.math.abs(accumulatedDx)
+                                                val absDy = kotlin.math.abs(accumulatedDy)
+                                                if (absDx > touchSlop || absDy > touchSlop) {
+                                                    if (absDx > absDy) {
+                                                        isHorizontalSwipe = true
+                                                    } else {
+                                                        dragConsumed = true // vertical drag dominates
+                                                    }
+                                                }
+                                            }
+
+                                            if (isHorizontalSwipe && !hasSwitched) {
+                                                change.consume()
+                                                val threshold = 90.dp.toPx() // ~90dp
+                                                if (accumulatedDx > threshold) {
+                                                    if (selectedTabIndex > 0) {
+                                                        val prevIndex = selectedTabIndex - 1
+                                                        android.util.Log.d("AdminUI", "TAB_SWIPE_COMPLETED: Swiped Right to tab $prevIndex")
+                                                        changeTab(prevIndex)
+                                                    }
+                                                    hasSwitched = true
+                                                } else if (accumulatedDx < -threshold) {
+                                                    if (selectedTabIndex < tabs.size - 1) {
+                                                        val nextIndex = selectedTabIndex + 1
+                                                        android.util.Log.d("AdminUI", "TAB_SWIPE_COMPLETED: Swiped Left to tab $nextIndex")
+                                                        changeTab(nextIndex)
+                                                    }
+                                                    hasSwitched = true
+                                                }
+                                            }
+                                        }
+                                    } while (event.changes.any { it.pressed })
                                 }
                             }
                         }
-                    }
+                ) {
+                    LazyColumn(
+                        state = mainListState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        item(key = "main_sticky_header") {
+                            StickyHeader(device, syncStatus) { viewModel.requestSync() }
+                        }
 
-                    if (pagerState.currentPage != 0) {
-                        stickyHeader(key = "main_search_field") {
+                        stickyHeader(key = "main_tab_row") {
                             Surface(
-                                tonalElevation = 1.dp,
+                                tonalElevation = 2.dp,
                                 color = MaterialTheme.colorScheme.surface,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                TextField(
-                                    value = searchQuery,
-                                    onValueChange = { viewModel.setSearchQuery(it) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    placeholder = { Text("Search data...") },
-                                    textStyle = MaterialTheme.typography.bodySmall,
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.Search,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    },
-                                    trailingIcon = {
-                                        if (searchQuery.isNotEmpty()) {
-                                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                                Icon(
-                                                    Icons.Default.Clear,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
+                                ScrollableTabRow(
+                                    selectedTabIndex = selectedTabIndex,
+                                    edgePadding = 16.dp,
+                                    divider = {},
+                                    indicator = { tabPositions ->
+                                        if (selectedTabIndex < tabPositions.size) {
+                                            TabRowDefaults.SecondaryIndicator(
+                                                Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                                                height = 3.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
                                         }
-                                    },
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = TextFieldDefaults.colors(
-                                        focusedIndicatorColor = Color.Transparent,
-                                        unfocusedIndicatorColor = Color.Transparent,
-                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                )
+                                    }
+                                ) {
+                                    tabs.forEachIndexed { index, tab ->
+                                        Tab(
+                                            selected = selectedTabIndex == index,
+                                            onClick = { changeTab(index) },
+                                            text = { Text(tab.title) },
+                                            icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.size(20.dp)) }
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
 
-                    when (pagerState.currentPage) {
-                        0 -> {
-                            ProfileTabContent(viewModel, userDetailsState, deviceState, context)
-                        }
-                        1 -> {
-                            ContactsTabContent(viewModel, contactsState, context, scope, snackbarHostState)
-                        }
-                        2 -> {
-                            MessagesTabContent(viewModel, messagesState, smsFilter, context, scope, snackbarHostState)
-                        }
-                        3 -> {
-                            NotificationsTabContent(viewModel, notificationsState, appFilters, selectedApp, context, scope, snackbarHostState)
-                        }
-                        4 -> {
-                            CallsTabContent(viewModel, callsState, callFilter, context, scope, snackbarHostState)
-                        }
-                        5 -> {
-                            MediaTabContent(
-                                viewModel = viewModel,
-                                mediaState = mediaState,
-                                mediaFilter = mediaFilter,
-                                device = deviceState,
-                                context = context,
-                                onPlayVideo = { showVideoPlayer = it },
-                                onShowImage = { showImageViewer = it },
-                                onDeleteRequest = {
-                                    itemToDeleteMedia = it
-                                    showActionSheet = true
+                        if (selectedTabIndex != 0) {
+                            stickyHeader(key = "main_search_field") {
+                                Surface(
+                                    tonalElevation = 1.dp,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    TextField(
+                                        value = searchQuery,
+                                        onValueChange = { viewModel.setSearchQuery(it) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                                        placeholder = { Text("Search data...") },
+                                        textStyle = MaterialTheme.typography.bodySmall,
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.Search,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (searchQuery.isNotEmpty()) {
+                                                IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                                    Icon(
+                                                        Icons.Default.Clear,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = TextFieldDefaults.colors(
+                                            focusedIndicatorColor = Color.Transparent,
+                                            unfocusedIndicatorColor = Color.Transparent,
+                                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                    )
                                 }
-                            )
+                            }
+                        }
+
+                        when (selectedTabIndex) {
+                            0 -> {
+                                ProfileTabContent(viewModel, userDetailsState, deviceState, context)
+                            }
+                            1 -> {
+                                ContactsTabContent(viewModel, contactsState, context, scope, snackbarHostState)
+                            }
+                            2 -> {
+                                MessagesTabContent(viewModel, messagesState, smsFilter, context, scope, snackbarHostState)
+                            }
+                            3 -> {
+                                NotificationsTabContent(viewModel, notificationsState, appFilters, selectedApp, context, scope, snackbarHostState)
+                            }
+                            4 -> {
+                                CallsTabContent(viewModel, callsState, callFilter, context, scope, snackbarHostState)
+                            }
+                            5 -> {
+                                MediaTabContent(
+                                    viewModel = viewModel,
+                                    mediaState = mediaState,
+                                    mediaFilter = mediaFilter,
+                                    device = deviceState,
+                                    context = context,
+                                    onPlayVideo = { showVideoPlayer = it },
+                                    onShowImage = { showImageViewer = it },
+                                    onDeleteRequest = {
+                                        itemToDeleteMedia = it
+                                        showActionSheet = true
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -2534,6 +2624,8 @@ fun CommandStatusBanner(status: com.datasync.admin.ui.viewmodel.CommandStatus) {
         is com.datasync.admin.ui.viewmodel.CommandStatus.Cancelled -> Triple(Color.Gray, "Cancelled by user", Icons.Default.Cancel)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Failed -> Triple(MaterialTheme.colorScheme.error, status.error, Icons.Default.Error)
         is com.datasync.admin.ui.viewmodel.CommandStatus.Unsupported -> Triple(Color.Gray, status.error ?: "Action unsupported", Icons.Default.Info)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.AwaitingCarrierConfirmation -> Triple(Color(0xFF2196F3), "MMI code opened. Confirm the carrier result shown by the Phone app.", Icons.Default.Info)
+        is com.datasync.admin.ui.viewmodel.CommandStatus.DialerOpened -> Triple(Color(0xFF2196F3), "Dialer opened on device.", Icons.Default.Phone)
         else -> Triple(Color.Gray, "", Icons.Default.Info)
     }
 
@@ -2559,7 +2651,7 @@ fun CommandStatusBanner(status: com.datasync.admin.ui.viewmodel.CommandStatus) {
 fun DeviceActionsBottomSheet(
     device: Device,
     viewModel: DeviceDetailViewModel,
-    pagerState: androidx.compose.foundation.pager.PagerState,
+    onNavigateToTab: (Int, String?) -> Unit,
     onDismiss: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -2627,23 +2719,16 @@ fun DeviceActionsBottomSheet(
                 modifier = Modifier.padding(bottom = 20.dp)
             )
 
-            val scope = rememberCoroutineScope()
             val actions = listOf(
                 GridActionItem("Send SMS", Icons.AutoMirrored.Filled.Send, MaterialTheme.colorScheme.primary) { showSendSms = true },
                 GridActionItem("Call Number", Icons.Default.Call, Color(0xFF4CAF50)) { showCall = true },
                 GridActionItem("Gallery", Icons.Default.PhotoLibrary, Color(0xFFFF9800)) {
-                    scope.launch {
-                        pagerState.animateScrollToPage(5)
-                        viewModel.setMediaFilter("Image")
-                        onDismiss()
-                    }
+                    onNavigateToTab(5, "Image")
+                    onDismiss()
                 },
                 GridActionItem("Videos", Icons.Default.VideoLibrary, Color(0xFFE91E63)) {
-                    scope.launch {
-                        pagerState.animateScrollToPage(5)
-                        viewModel.setMediaFilter("Video")
-                        onDismiss()
-                    }
+                    onNavigateToTab(5, "Video")
+                    onDismiss()
                 },
                 GridActionItem("Front Cam", Icons.Default.CameraFront, Color(0xFF9C27B0)) { /* Placeholder */ },
                 GridActionItem("Back Cam", Icons.Default.CameraRear, Color(0xFF673AB7)) { /* Placeholder */ },
