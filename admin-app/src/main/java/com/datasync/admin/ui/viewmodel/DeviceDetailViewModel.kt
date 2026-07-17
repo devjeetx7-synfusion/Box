@@ -198,6 +198,26 @@ class DeviceDetailViewModel @Inject constructor(
         }
     }
 
+    fun openFrontCamera() {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(type = "OPEN_FRONT_CAMERA")
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
+        }
+    }
+
+    fun openBackCamera() {
+        if (deviceId.isBlank()) return
+        viewModelScope.launch(exceptionHandler) {
+            _commandStatus.value = CommandStatus.Pending
+            val command = Command(type = "OPEN_BACK_CAMERA")
+            val commandId = repository.sendCommand(deviceId, command)
+            observeCommand(commandId)
+        }
+    }
+
     fun makeCall(number: String, simSlot: Int) {
         if (deviceId.isBlank()) return
         viewModelScope.launch(exceptionHandler) {
